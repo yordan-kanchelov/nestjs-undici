@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Module, Injectable } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { HttpModule, HttpService } from 'nestjs-undici';
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
 
 // Example 1: Function-based interceptor for adding auth headers
 const authInterceptor = (request, next) => {

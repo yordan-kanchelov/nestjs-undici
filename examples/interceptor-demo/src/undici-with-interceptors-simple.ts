@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Module, Injectable } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { HttpModule, HttpService } from 'nestjs-undici';
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
 
 @Injectable()
 export class ApiService {

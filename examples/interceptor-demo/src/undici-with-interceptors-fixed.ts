@@ -15,7 +15,7 @@ export class AuthInterceptor implements HttpInterceptor {
     next: HttpInterceptorHandler
   ): Observable<Dispatcher.ResponseData> {
     console.log('🔵 Request Interceptor: Adding auth header');
-
+    
     // Modify the request by adding headers
     const modifiedRequest = {
       ...request,
@@ -23,33 +23,34 @@ export class AuthInterceptor implements HttpInterceptor {
         ...request.options,
         headers: {
           ...request.options.headers,
-          Authorization: 'Bearer fake-token',
+          'Authorization': 'Bearer fake-token',
           'X-Custom-Header': 'interceptor-added-this',
         },
       },
     };
-
+    
     // Pass the modified request to the next handler
     return next.handle(modifiedRequest);
   }
 }
 
 // Response interceptor that transforms the response
+@Injectable()
 export class ResponseTransformInterceptor implements HttpInterceptor {
   intercept(
     request: HttpInterceptorRequest,
     next: HttpInterceptorHandler
   ): Observable<Dispatcher.ResponseData> {
     console.log('🟡 Response Transform Interceptor: Processing...');
-
+    
     return next.handle(request).pipe(
       map(response => {
         console.log('🟢 Response Interceptor: Status', response.statusCode);
-
+        
         // Note: In undici, we can't modify the response body directly
         // But we can log, handle errors, or trigger side effects
         return response;
-      }),
+      })
     );
   }
 }
@@ -57,44 +58,50 @@ export class ResponseTransformInterceptor implements HttpInterceptor {
 // Function-based interceptor
 const loggingInterceptor = (
   request: HttpInterceptorRequest,
-  next: HttpInterceptorHandler,
+  next: HttpInterceptorHandler
 ): Observable<Dispatcher.ResponseData> => {
   console.log('📝 Logging Interceptor: Request to', request.url);
   const startTime = Date.now();
-
+  
   return next.handle(request).pipe(
     map(response => {
       const duration = Date.now() - startTime;
       console.log(`📝 Logging Interceptor: Request completed in ${duration}ms`);
       return response;
-    }),
+    })
   );
 };
 
 @Injectable()
 export class ApiService {
-  constructor(private readonly httpService: HttpService) {
-    console.log('✅ HttpService with interceptor support initialized');
-    console.log(
-      `✅ Number of interceptors: ${this.httpService.interceptorCount}`,
-    );
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly authInterceptor: AuthInterceptor,
+    private readonly responseInterceptor: ResponseTransformInterceptor,
+  ) {
+    console.log('✅ HttpService initialized');
+    
+    // Add class-based interceptors dynamically (properly instantiated)
+    this.httpService.addInterceptor(this.authInterceptor);
+    this.httpService.addInterceptor(this.responseInterceptor);
+    this.httpService.addInterceptor(loggingInterceptor);
+    
+    console.log(`✅ Number of interceptors: ${this.httpService.interceptorCount}`);
   }
 
   async testRequest() {
     console.log('\n📡 Making request with nestjs-undici interceptors...\n');
-
+    
     try {
-      const observable = this.httpService.request(
-        'https://jsonplaceholder.typicode.com/posts/1',
-      );
-
+      const observable = this.httpService.request('https://jsonplaceholder.typicode.com/posts/1');
+      
       const response = await new Promise<any>((resolve, reject) => {
         observable.subscribe({
-          next: value => resolve(value),
-          error: err => reject(err),
+          next: (value) => resolve(value),
+          error: (err) => reject(err)
         });
       });
-
+      
       const data = await response.body.json();
       console.log('\n✅ Response received:', JSON.stringify(data, null, 2));
       console.log('\n🎯 Interceptors successfully processed the request!');
@@ -110,23 +117,24 @@ export class ApiService {
 @Module({
   imports: [
     HttpModule.register({
-      interceptors: [
-        AuthInterceptor,
-        ResponseTransformInterceptor,
-        loggingInterceptor,
-      ],
+      // Only register function-based interceptors here
+      interceptors: [],
     }),
   ],
-  providers: [ApiService, AuthInterceptor, ResponseTransformInterceptor],
+  providers: [
+    ApiService, 
+    AuthInterceptor, 
+    ResponseTransformInterceptor
+  ],
 })
 class AppModule {}
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
   const apiService = app.get(ApiService);
-
+  
   await apiService.testRequest();
-
+  
   await app.close();
 }
 

@@ -8,7 +8,9 @@
     "test:undici": "ts-node src/undici-example.ts",
     "test:undici-interceptors": "ts-node src/undici-with-interceptors.ts",
     "test:undici-simple": "ts-node src/undici-with-interceptors-simple.ts",
-    "test:complete": "ts-node src/undici-complete-example.ts"
+    "test:complete": "ts-node src/undici-complete-example.ts",
+    "test:fixed": "ts-node src/undici-with-interceptors-fixed.ts",
+    "test:class": "ts-node src/class-interceptors-test.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^3.0.0",
@@ -16,9 +18,9 @@
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "axios": "^1.4.0",
-    "nestjs-undici": "file:../..",
+    "nestjs-undici-interceptors": "file:../..",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1"
+    "rxjs": "7.8.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
