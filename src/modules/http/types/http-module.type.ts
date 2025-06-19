@@ -19,4 +19,9 @@ export type UndiciRequestType = (
   args: UndiciRequestArgsType,
 ) => UndiciResponseDataType;
 
-export type HttpModuleOptions = UndiciRequestOptionsType;
+import type { Type } from '@nestjs/common';
+import type { HttpInterceptor, HttpInterceptorFunction } from '../interfaces';
+
+export type HttpModuleOptions = UndiciRequestOptionsType & {
+  interceptors?: Array<Type<HttpInterceptor> | HttpInterceptorFunction>;
+};

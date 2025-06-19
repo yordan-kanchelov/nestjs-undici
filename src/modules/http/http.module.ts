@@ -1,4 +1,4 @@
-import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { randomStringGenerator } from '@nestjs/common/utils/random-string-generator.util';
 
 import { HttpService } from './services/http.service';
@@ -26,6 +26,10 @@ export class HttpModule {
       providers: [
         {
           provide: UNDICI_INSTANCE_TOKEN,
+          useValue: config,
+        },
+        {
+          provide: HTTP_MODULE_OPTIONS,
           useValue: config,
         },
         {

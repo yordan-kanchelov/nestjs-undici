@@ -1,7 +1,7 @@
 {
-  "name": "nestjs-undici",
-  "version": "0.2.57",
-  "description": "Undici utilities module based on the @nodejs/undici package 🌐",
+  "name": "nestjs-undici-interceptors",
+  "version": "0.3.0",
+  "description": "Fork of nestjs-undici with interceptor support - Undici utilities module based on the @nodejs/undici package 🌐",
   "homepage": "https://hebertcisco.github.io/nestjs-undici",
   "main": "index.js",
   "types": "index.d.ts",
@@ -130,9 +130,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hebertcisco/nestjs-undici"
+    "url": "https://github.com/yordan-kanchelov/nestjs-undici-fork"
   },
   "bugs": {
-    "url": "https://github.com/hebertcisco/nestjs-undici/issues"
+    "url": "https://github.com/yordan-kanchelov/nestjs-undici-fork/issues"
   }
 }
