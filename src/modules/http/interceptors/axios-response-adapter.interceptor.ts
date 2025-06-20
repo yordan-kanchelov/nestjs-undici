@@ -131,7 +131,7 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
           url: typeof request.url === 'string' ? request.url : request.url.toString(),
           method: request.options.method || 'GET',
           headers: request.options.headers as Record<string, string | string[]>,
-          timeout: request.options.headersTimeout,
+          timeout: request.options.headersTimeout || request.options.bodyTimeout,
           validateStatus: request.options.validateStatus,
         };
 

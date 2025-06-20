@@ -124,8 +124,7 @@ describe('OpenTelemetry Interceptor Integration', () => {
           }
         }).subscribe({
           next: async (response) => {
-            const body = await response.body.text();
-            expect(body).toBe('success');
+            expect(response.data).toBe('success');
             
             // Verify OpenTelemetry APIs were called
             expect(context.active).toHaveBeenCalled();
@@ -213,8 +212,8 @@ describe('OpenTelemetry Interceptor Integration', () => {
   });
 
   describe('interceptor count', () => {
-    it('should have exactly one interceptor after initialization', () => {
-      expect(httpService.interceptorCount).toBe(1);
+    it('should have two interceptors after initialization (OpenTelemetry + axios adapter)', () => {
+      expect(httpService.interceptorCount).toBe(2); // OpenTelemetry + axios adapter
     });
   });
 });

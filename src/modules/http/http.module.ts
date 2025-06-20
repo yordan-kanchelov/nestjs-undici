@@ -26,8 +26,15 @@ const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
   exports: [HttpService],
 })
 export class HttpModule {
-  static register(config: HttpModuleOptions): DynamicModule {
-    const { interceptors = [], ...undiciOptions } = config;
+  static register(config: HttpModuleOptions = {}): DynamicModule {
+    // Add axios response adapter to interceptors
+    // User interceptors run first, then axios adapter transforms the final result
+    const interceptors = [
+      ...(config.interceptors || []),
+      axiosResponseAdapter
+    ];
+    
+    const { interceptors: _, ...undiciOptions } = config;
     
     // Separate function and class interceptors
     const functionInterceptors: HttpInterceptorFunction[] = [];
@@ -95,20 +102,6 @@ export class HttpModule {
     };
   }
 
-  static registerAxiosCompatible(config: HttpModuleOptions = {}): DynamicModule {
-    // Add axios response adapter to interceptors
-    // User interceptors run first, then axios adapter transforms the final result
-    const interceptors = [
-      ...(config.interceptors || []),
-      axiosResponseAdapter
-    ];
-    
-    return HttpModule.register({
-      ...config,
-      interceptors,
-    });
-  }
-
   static registerAsync(options: HttpModuleAsyncOptions): DynamicModule {
     return {
       module: HttpModule,
@@ -130,9 +123,9 @@ export class HttpModule {
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
           useFactory: (config: HttpModuleOptions) => {
-            // For async registration, we only support function interceptors
-            // Class interceptors would need to be added via extraProviders
-            return config.interceptors?.filter(i => typeof i === 'function') || [];
+            // Get base interceptors and always add axios response adapter
+            const baseInterceptors = config.interceptors?.filter(i => typeof i === 'function') || [];
+            return [...baseInterceptors, axiosResponseAdapter];
           },
           inject: [HTTP_MODULE_OPTIONS],
         },

@@ -4,17 +4,26 @@ import { request } from 'undici';
 import { Observable, defer, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 
-import { UNDICI_INSTANCE_TOKEN, HTTP_MODULE_OPTIONS } from '../constants/http.constants';
+import {
+  UNDICI_INSTANCE_TOKEN,
+  HTTP_MODULE_OPTIONS,
+} from '../constants/http.constants';
 
 import type { UrlObject } from 'node:url';
 import type { Dispatcher } from 'undici';
 import type { HttpModuleOptions, UndiciRequestOptionsType } from '../types';
-import type { HttpInterceptor, HttpInterceptorFunction, HttpInterceptorHandler, HttpInterceptorRequest } from '../interfaces';
+import type {
+  HttpInterceptor,
+  HttpInterceptorFunction,
+  HttpInterceptorHandler,
+  HttpInterceptorRequest,
+  AxiosCompatibleRequestOptions,
+  AxiosLikeResponse,
+} from '../interfaces';
 
 @Injectable()
 export class HttpService {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
-  private axiosCompatible = false;
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -32,23 +41,31 @@ export class HttpService {
         .map(interceptor => interceptor as HttpInterceptorFunction);
     }
   }
-  
+
   public setGlobalDispatcher(dispatcher: Dispatcher): void {
     this.instanceOptions.dispatcher = dispatcher;
   }
 
-  public request(
+  public request<T = any>(
     url: string | URL | UrlObject,
     options?: { dispatcher?: Dispatcher } & Omit<
       Dispatcher.RequestOptions,
       'origin' | 'path' | 'method'
     > &
-      Partial<Pick<Dispatcher.RequestOptions, 'method'>>,
-  ): Observable<Dispatcher.ResponseData> {
+      Partial<Pick<Dispatcher.RequestOptions, 'method'>> & { timeout?: number },
+  ): Observable<AxiosLikeResponse<T>> {
+    // Handle timeout option for axios compatibility
+    const { timeout, ...restOptions } = options || {};
     const mergedOptions = {
       ...this.instanceOptions,
-      ...options,
+      ...restOptions,
     };
+
+    // Map timeout to undici's timeout options
+    if (timeout !== undefined) {
+      mergedOptions.headersTimeout = timeout;
+      mergedOptions.bodyTimeout = timeout;
+    }
 
     // Create the request object for interceptors
     const interceptorRequest: HttpInterceptorRequest = {
@@ -56,19 +73,19 @@ export class HttpService {
       options: mergedOptions,
     };
 
-    // If no interceptors, execute the request directly
-    if (this.interceptors.length === 0) {
-      return this.executeRequest(interceptorRequest);
-    }
-
-    // Create the interceptor chain
+    // Create the interceptor chain (always includes axios adapter)
     return this.executeInterceptorChain(interceptorRequest);
   }
 
-  private executeRequest(interceptorRequest: HttpInterceptorRequest): Observable<Dispatcher.ResponseData> {
+  private executeRequest<T = any>(
+    interceptorRequest: HttpInterceptorRequest,
+  ): Observable<Dispatcher.ResponseData> {
     return defer(() => {
       return new Observable<Dispatcher.ResponseData>(subscriber => {
-        const response = request(interceptorRequest.url, interceptorRequest.options);
+        const response = request(
+          interceptorRequest.url,
+          interceptorRequest.options,
+        );
         response
           .then(res => {
             subscriber.next(res);
@@ -81,21 +98,24 @@ export class HttpService {
     });
   }
 
-  private executeInterceptorChain(request: HttpInterceptorRequest): Observable<Dispatcher.ResponseData> {
-    const handler = this.createInterceptorHandler(0);
+  private executeInterceptorChain<T = any>(
+    request: HttpInterceptorRequest,
+  ): Observable<any> {
+    const handler = this.createInterceptorHandler<T>(0);
     return handler.handle(request);
   }
 
-  private createInterceptorHandler(index: number): HttpInterceptorHandler {
+  private createInterceptorHandler<T = any>(index: number): HttpInterceptorHandler {
     if (index >= this.interceptors.length) {
       // End of chain - execute the actual request
       return {
-        handle: (request: HttpInterceptorRequest) => this.executeRequest(request),
+        handle: (request: HttpInterceptorRequest) =>
+          this.executeRequest<T>(request),
       };
     }
 
     const interceptor = this.interceptors[index];
-    const nextHandler = this.createInterceptorHandler(index + 1);
+    const nextHandler = this.createInterceptorHandler<T>(index + 1);
 
     return {
       handle: (request: HttpInterceptorRequest) => {
@@ -112,17 +132,18 @@ export class HttpService {
     return this.instanceOptions;
   }
 
-  public addInterceptor(interceptor: HttpInterceptor | HttpInterceptorFunction): void {
+  public addInterceptor(
+    interceptor: HttpInterceptor | HttpInterceptorFunction,
+  ): void {
     this.interceptors.push(interceptor);
   }
 
-  public setInterceptors(interceptors: Array<HttpInterceptor | HttpInterceptorFunction>): void {
+  public setInterceptors(
+    interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
+  ): void {
     this.interceptors = interceptors;
   }
-  
-  public setAxiosCompatible(value: boolean): void {
-    this.axiosCompatible = value;
-  }
+
 
   public get interceptorCount(): number {
     return this.interceptors.length;
@@ -132,11 +153,12 @@ export class HttpService {
    * Convenience method for GET requests
    * @param url The URL to request
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public get<T = any>(
-    url: string | URL | UrlObject, 
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    url: string | URL | UrlObject,
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     return this.request(url, { ...config, method: 'GET' });
   }
 
@@ -145,21 +167,26 @@ export class HttpService {
    * @param url The URL to request
    * @param data The data to send in the body
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public post<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
-    const body = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
-    return this.request(url, { 
-      ...config, 
-      method: 'POST', 
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
+    const body = data
+      ? typeof data === 'string'
+        ? data
+        : JSON.stringify(data)
+      : undefined;
+    return this.request(url, {
+      ...config,
+      method: 'POST',
       body,
       headers: {
         'Content-Type': 'application/json',
-        ...config?.headers
-      }
+        ...config?.headers,
+      },
     });
   }
 
@@ -168,21 +195,26 @@ export class HttpService {
    * @param url The URL to request
    * @param data The data to send in the body
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public put<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
-    const body = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
-    return this.request(url, { 
-      ...config, 
-      method: 'PUT', 
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
+    const body = data
+      ? typeof data === 'string'
+        ? data
+        : JSON.stringify(data)
+      : undefined;
+    return this.request(url, {
+      ...config,
+      method: 'PUT',
       body,
       headers: {
         'Content-Type': 'application/json',
-        ...config?.headers
-      }
+        ...config?.headers,
+      },
     });
   }
 
@@ -190,11 +222,12 @@ export class HttpService {
    * Convenience method for DELETE requests
    * @param url The URL to request
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public delete<T = any>(
     url: string | URL | UrlObject,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     return this.request(url, { ...config, method: 'DELETE' });
   }
 
@@ -203,21 +236,26 @@ export class HttpService {
    * @param url The URL to request
    * @param data The data to send in the body
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public patch<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
-    const body = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
-    return this.request(url, { 
-      ...config, 
-      method: 'PATCH', 
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
+    const body = data
+      ? typeof data === 'string'
+        ? data
+        : JSON.stringify(data)
+      : undefined;
+    return this.request(url, {
+      ...config,
+      method: 'PATCH',
       body,
       headers: {
         'Content-Type': 'application/json',
-        ...config?.headers
-      }
+        ...config?.headers,
+      },
     });
   }
 
@@ -225,11 +263,12 @@ export class HttpService {
    * Convenience method for HEAD requests
    * @param url The URL to request
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public head<T = any>(
     url: string | URL | UrlObject,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     return this.request(url, { ...config, method: 'HEAD' });
   }
 
@@ -237,11 +276,12 @@ export class HttpService {
    * Convenience method for OPTIONS requests
    * @param url The URL to request
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public options<T = any>(
     url: string | URL | UrlObject,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     return this.request(url, { ...config, method: 'OPTIONS' });
   }
 
@@ -250,21 +290,22 @@ export class HttpService {
    * @param url The URL to request
    * @param data The form data to send
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public postForm<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     const body = this.createFormData(data);
-    return this.request(url, { 
-      ...config, 
-      method: 'POST', 
+    return this.request(url, {
+      ...config,
+      method: 'POST',
       body,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers
-      }
+        ...config?.headers,
+      },
     });
   }
 
@@ -273,21 +314,22 @@ export class HttpService {
    * @param url The URL to request
    * @param data The form data to send
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public putForm<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     const body = this.createFormData(data);
-    return this.request(url, { 
-      ...config, 
-      method: 'PUT', 
+    return this.request(url, {
+      ...config,
+      method: 'PUT',
       body,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers
-      }
+        ...config?.headers,
+      },
     });
   }
 
@@ -296,21 +338,22 @@ export class HttpService {
    * @param url The URL to request
    * @param data The form data to send
    * @param config Optional configuration
+   * @returns Observable that emits AxiosLikeResponse<T>
    */
   public patchForm<T = any>(
     url: string | URL | UrlObject,
     data?: any,
-    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
-  ): Observable<Dispatcher.ResponseData> {
+    config?: AxiosCompatibleRequestOptions,
+  ): Observable<AxiosLikeResponse<T>> {
     const body = this.createFormData(data);
-    return this.request(url, { 
-      ...config, 
-      method: 'PATCH', 
+    return this.request(url, {
+      ...config,
+      method: 'PATCH',
       body,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers
-      }
+        ...config?.headers,
+      },
     });
   }
 
@@ -320,9 +363,12 @@ export class HttpService {
   private createFormData(data: any): string {
     if (!data) return '';
     if (typeof data === 'string') return data;
-    
+
     return Object.entries(data)
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .map(
+        ([key, value]) =>
+          `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
+      )
       .join('&');
   }
 }

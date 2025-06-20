@@ -51,12 +51,13 @@ describe('HttpService with Interceptors (e2e)', () => {
             });
 
             const response = await firstValueFrom(result);
-            expect(response.statusCode).toBe(200);
+            expect(response.status).toBe(200);
             expect(interceptorCalls).toEqual(['interceptor1', 'interceptor2']);
         });
 
         it('should have correct number of interceptors', () => {
-            expect(service.interceptorCount).toBe(2);
+            // Includes 2 user interceptors + 1 axios adapter interceptor
+            expect(service.interceptorCount).toBe(3);
         });
     });
 
@@ -70,7 +71,8 @@ describe('HttpService with Interceptors (e2e)', () => {
         });
 
         it('should allow adding interceptors dynamically', async () => {
-            expect(service.interceptorCount).toBe(0);
+            // Starts with 1 (axios adapter interceptor)
+            expect(service.interceptorCount).toBe(1);
 
             // Add first interceptor
             service.addInterceptor((request, next) => {
@@ -78,7 +80,7 @@ describe('HttpService with Interceptors (e2e)', () => {
                 return next.handle(request);
             });
 
-            expect(service.interceptorCount).toBe(1);
+            expect(service.interceptorCount).toBe(2);
 
             // Add second interceptor
             service.addInterceptor((request, next) => {
@@ -86,13 +88,13 @@ describe('HttpService with Interceptors (e2e)', () => {
                 return next.handle(request);
             });
 
-            expect(service.interceptorCount).toBe(2);
+            expect(service.interceptorCount).toBe(3);
 
             // Make request
             const result = service.request('https://jsonplaceholder.typicode.com/posts/1');
             const response = await firstValueFrom(result);
 
-            expect(response.statusCode).toBe(200);
+            expect(response.status).toBe(200);
             expect(interceptorCalls).toEqual(['dynamic1', 'dynamic2']);
         });
     });

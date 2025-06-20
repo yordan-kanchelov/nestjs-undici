@@ -22,7 +22,7 @@ describe('HttpService Convenience Methods', () => {
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      imports: [HttpModule.registerAxiosCompatible()],
+      imports: [HttpModule.register()],
     }).compile();
 
     service = module.get<HttpService>(HttpService);

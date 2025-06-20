@@ -41,7 +41,7 @@ describe('Axios Full Compatibility E2E Tests', () => {
     }).compile();
 
     undiciModule = await Test.createTestingModule({
-      imports: [UndiciHttpModule.registerAxiosCompatible({ timeout: 5000 })],
+      imports: [UndiciHttpModule.register({ timeout: 5000 })],
     }).compile();
 
     axiosService = axiosModule.get<AxiosHttpService>(AxiosHttpService);

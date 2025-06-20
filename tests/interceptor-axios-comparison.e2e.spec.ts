@@ -96,7 +96,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
           return config;
         });
 
-        // Setup Undici module with interceptors
+        // Setup Undici module with interceptors (using native mode for this test)
         undiciModule = await Test.createTestingModule({
           imports: [
             UndiciHttpModule.register({
@@ -126,7 +126,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         // Setup Undici Axios-compatible module
         undiciAxiosCompatModule = await Test.createTestingModule({
           imports: [
-            UndiciHttpModule.registerAxiosCompatible({
+            UndiciHttpModule.register({
               interceptors: [
                 (request, next) => {
                   const modifiedRequest = {
@@ -171,7 +171,8 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         const undiciResponse = await firstValueFrom(
           undiciService.request(serverUrl),
         );
-        const undiciData: any = await undiciResponse.body.json();
+        // Undici now returns axios-compatible responses
+        const undiciData: any = undiciResponse.data;
         expect(undiciData.headers.authorization).toBe('Bearer undici-token');
         expect(undiciData.headers['x-request-id']).toBe('undici-123');
         expect(undiciData.headers['x-custom-header']).toBe('undici-value');
@@ -236,7 +237,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
           return config;
         });
 
-        // Undici with multiple interceptors
+        // Undici with multiple interceptors (using native mode)
         undiciModule = await Test.createTestingModule({
           imports: [
             UndiciHttpModule.register({
@@ -309,7 +310,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         const undiciResponse = await firstValueFrom(
           undiciService.request(serverUrl),
         );
-        const undiciData: any = await undiciResponse.body.json();
+        const undiciData: any = undiciResponse.data;
         expect(undiciData.interceptorOrder).toBe('U1-U2-U3');
       });
     });
@@ -358,7 +359,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         // In axios-compatible mode, interceptors run BEFORE the axios adapter transforms the response
         undiciAxiosCompatModule = await Test.createTestingModule({
           imports: [
-            UndiciHttpModule.registerAxiosCompatible({
+            UndiciHttpModule.register({
               interceptors: [
                 // In axios-compatible mode, this interceptor runs AFTER the axios adapter
                 // So we work with the axios-format response, not raw Undici response
@@ -467,7 +468,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         // Undici Axios-compatible with error interceptor
         undiciAxiosCompatModule = await Test.createTestingModule({
           imports: [
-            UndiciHttpModule.registerAxiosCompatible({
+            UndiciHttpModule.register({
               interceptors: [
                 (request, next) => {
                   return next.handle(request).pipe(
@@ -555,7 +556,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
       }).compile();
 
       undiciAxiosCompatModule = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       axiosService = axiosModule.get<AxiosHttpService>(AxiosHttpService);
@@ -646,7 +647,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         }).compile();
 
         undiciAxiosCompatModule = await Test.createTestingModule({
-          imports: [UndiciHttpModule.registerAxiosCompatible()],
+          imports: [UndiciHttpModule.register()],
         }).compile();
 
         axiosService = axiosModule.get<AxiosHttpService>(AxiosHttpService);
@@ -700,7 +701,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
         }).compile();
 
         undiciAxiosCompatModule = await Test.createTestingModule({
-          imports: [UndiciHttpModule.registerAxiosCompatible()],
+          imports: [UndiciHttpModule.register()],
         }).compile();
 
         axiosService = axiosModule.get<AxiosHttpService>(AxiosHttpService);
@@ -744,7 +745,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
       });
 
       undiciModule = await Test.createTestingModule({
-        imports: [UndiciHttpModule.register({})],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       undiciService = undiciModule.get<UndiciHttpService>(UndiciHttpService);
@@ -757,7 +758,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
     it('should support adding interceptors dynamically', async () => {
       // Initial request without interceptors
       const response1 = await firstValueFrom(undiciService.request(serverUrl));
-      const data1: any = await response1.body.json();
+      const data1: any = response1.data;
       expect(data1.headers['x-dynamic']).toBeUndefined();
 
       // Add interceptor dynamically
@@ -777,18 +778,19 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
 
       // Request with dynamically added interceptor
       const response2 = await firstValueFrom(undiciService.request(serverUrl));
-      const data2: any = await response2.body.json();
+      const data2: any = response2.data;
       expect(data2.headers['x-dynamic']).toBe('added-dynamically');
     });
 
     it('should maintain interceptor count', () => {
-      expect(undiciService.interceptorCount).toBe(0);
-
-      undiciService.addInterceptor((request, next) => next.handle(request));
+      // Starts with 1 (axios adapter interceptor)
       expect(undiciService.interceptorCount).toBe(1);
 
       undiciService.addInterceptor((request, next) => next.handle(request));
       expect(undiciService.interceptorCount).toBe(2);
+
+      undiciService.addInterceptor((request, next) => next.handle(request));
+      expect(undiciService.interceptorCount).toBe(3);
     });
   });
 
@@ -864,7 +866,7 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-undici', () => {
 
     it('should support class-based interceptors', async () => {
       const response = await firstValueFrom(undiciService.request(serverUrl));
-      const data: any = await response.body.json();
+      const data: any = response.data;
 
       // HTTP headers are case-insensitive, check both cases
       expect(data.headers.authorization || data.headers.Authorization).toBe(

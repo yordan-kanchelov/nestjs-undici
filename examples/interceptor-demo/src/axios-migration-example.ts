@@ -14,8 +14,8 @@ interface GinPortalConfigDTO {
 }
 
 /**
- * This example shows how existing Axios code can work with minimal changes
- * when using the axios-compatible mode of nestjs-undici-interceptors
+ * This example shows how existing Axios code works without ANY changes
+ * in v0.4.0+ (axios-compatible responses are now the default)
  */
 @Injectable()
 export class ConfigService {
@@ -26,7 +26,7 @@ export class ConfigService {
 
   /**
    * This method uses the EXACT SAME CODE that would work with @nestjs/axios
-   * No changes needed thanks to the axios response adapter!
+   * In v0.4.0+, no special configuration needed - it just works!
    */
   async activateConfigs(): Promise<GinPortalConfigDTO[] | undefined> {
     this.logger.log("Activate configs on IDLE state");
@@ -71,8 +71,8 @@ export class ConfigService {
 
 @Module({
   imports: [
-    // 🎯 Key difference: Use registerAxiosCompatible instead of register
-    HttpModule.registerAxiosCompatible({
+    // In v0.4.0+, all responses are axios-compatible
+    HttpModule.register({
       timeout: 5000,
       maxRedirects: 5,
     }),

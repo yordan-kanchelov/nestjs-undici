@@ -11,14 +11,14 @@ export interface HttpInterceptor {
   intercept(
     request: HttpInterceptorRequest,
     next: HttpInterceptorHandler
-  ): Observable<Dispatcher.ResponseData>;
+  ): Observable<any>;
 }
 
 export interface HttpInterceptorHandler {
-  handle(request: HttpInterceptorRequest): Observable<Dispatcher.ResponseData>;
+  handle(request: HttpInterceptorRequest): Observable<any>;
 }
 
 export type HttpInterceptorFunction = (
   request: HttpInterceptorRequest,
   next: HttpInterceptorHandler
-) => Observable<Dispatcher.ResponseData>;
+) => Observable<any>;

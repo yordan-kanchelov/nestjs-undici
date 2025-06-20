@@ -2,6 +2,8 @@
 
 > **Note**: This is a fork of the original [nestjs-undici](https://github.com/hebertcisco/nestjs-undici) package with added HTTP interceptor support.
 
+> **Breaking Change in v0.4.0**: This library now always returns axios-compatible responses. The separate native mode and `registerAxiosCompatible()` method have been removed. See [Migration Guide](#migration-from-v03x-to-v04x) below.
+
 [![npm version](https://badge.fury.io/js/nestjs-undici-interceptors.svg)](https://badge.fury.io/js/nestjs-undici-interceptors)
 [![Original Package](https://img.shields.io/badge/original-nestjs--undici-blue)](https://github.com/hebertcisco/nestjs-undici)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -15,6 +17,7 @@ This fork adds the following features to the original package:
 - ✅ **Function-based interceptors**: Simple functions for request/response processing
 - ✅ **Class-based interceptors**: Injectable classes implementing the HttpInterceptor interface
 - ✅ **Dynamic interceptor registration**: Add interceptors at runtime
+- ✅ **Axios-Compatible Responses**: All responses are now axios-compatible (v0.4.0+)
 
 ## Features
 
@@ -27,7 +30,7 @@ This fork adds the following features to the original package:
 - 🔍 Built-in request/response interceptors
 - 🔄 Automatic retry mechanism
 - 📝 Comprehensive documentation
-- 🎯 **Axios Compatibility Mode**: Drop-in replacement for @nestjs/axios
+- 🎯 **Drop-in Replacement**: Can replace @nestjs/axios with minimal code changes
 
 ## Installation
 
@@ -70,19 +73,47 @@ export class AppModule {}
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { HttpService } from 'nestjs-undici-interceptors';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class AppService {
   constructor(private readonly httpService: HttpService) {}
 
   async getUsers() {
-    const response = await this.httpService
-      .request('https://api.example.com/users')
-      .toPromise();
+    // Responses are always axios-compatible (v0.4.0+)
+    const response = await firstValueFrom(
+      this.httpService.get('https://api.example.com/users')
+    );
     
-    return response.data;
+    return response.data; // Direct access to data property
   }
 }
+```
+
+## Migration from @nestjs/axios
+
+Starting from v0.4.0, migrating from @nestjs/axios is as simple as changing the import:
+
+```typescript
+// Before
+import { HttpService } from '@nestjs/axios';
+
+// After
+import { HttpService } from 'nestjs-undici-interceptors';
+```
+
+The API is fully compatible, so your existing code will continue to work!
+
+## Configuration Options
+
+```typescript
+      headers: {
+        'User-Agent': 'My App',
+      },
+    }),
+  ],
+})
+export class AppModule {}
 ```
 
 ## Configuration
@@ -220,10 +251,10 @@ For easier migration from `@nestjs/axios`, this fork provides an Axios compatibi
 ```typescript
 import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
 
-// Enable Axios compatibility mode - it's that simple!
+// Drop-in replacement for @nestjs/axios!
 @Module({
   imports: [
-    HttpModule.registerAxiosCompatible({
+    HttpModule.register({
       timeout: 5000,
       // ... other options
     })
@@ -247,7 +278,7 @@ export class MyService {
 }
 ```
 
-With Axios compatibility mode, responses have the familiar Axios structure:
+All responses have the familiar Axios structure:
 - `response.data` - Parsed response body (JSON/text/Buffer)
 - `response.status` - HTTP status code (200, 404, etc.)
 - `response.statusText` - HTTP status text ("OK", "Not Found", etc.)
@@ -256,27 +287,19 @@ With Axios compatibility mode, responses have the familiar Axios structure:
 
 **Important**: Just like Axios, responses with status codes >= 400 are thrown as errors with the same error structure as Axios (including `error.response`, `error.config`, and `error.isAxiosError`).
 
-#### Migration from @nestjs/axios
+#### Simple Migration from @nestjs/axios
 
-Migration is incredibly simple - just two steps:
+Migration is incredibly simple - just change the import:
 
-1. **Replace the package import:**
-   ```typescript
-   // Before
-   import { HttpModule, HttpService } from '@nestjs/axios';
-   
-   // After
-   import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
-   ```
+```typescript
+// Before
+import { HttpModule, HttpService } from '@nestjs/axios';
 
-2. **Use `registerAxiosCompatible` instead of `register`:**
-   ```typescript
-   // Before
-   HttpModule.register({ timeout: 5000 })
-   
-   // After
-   HttpModule.registerAxiosCompatible({ timeout: 5000 })
-   ```
+// After
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+```
+
+That's it! The API is fully compatible.
 
 That's it! Your existing code continues to work without any other changes. You get:
 - ✅ Same response structure as Axios
@@ -298,6 +321,100 @@ All the familiar Axios methods are available:
 - `httpService.postForm(url, data?, config?)`
 - `httpService.putForm(url, data?, config?)`
 - `httpService.patchForm(url, data?, config?)`
+
+## Migration from v0.3.x to v0.4.x
+
+**Breaking Change**: Starting from v0.4.0, this library always returns axios-compatible responses. The native mode and separate registration methods have been removed for simplicity.
+
+### What Changed
+
+1. **All responses are now axios-compatible** - No more union types or type checking needed
+2. **Removed methods**:
+   - `HttpModule.registerAxiosCompatible()` - No longer needed, use `register()`
+   - `HttpModule.registerNativeAsync()` - Removed
+   - `nativeMode` option - Removed
+3. **Removed classes**:
+   - `AxiosCompatibleHttpService` - Functionality merged into `HttpService`
+
+### Migration Steps
+
+#### If you were using `registerAxiosCompatible()`
+
+Simply change to `register()`:
+
+```typescript
+// Before (v0.3.x)
+HttpModule.registerAxiosCompatible({ timeout: 5000 })
+
+// After (v0.4.x)
+HttpModule.register({ timeout: 5000 })
+```
+
+#### If you were using `register()` with default behavior
+
+Update your response handling code:
+
+```typescript
+// Before (v0.3.x) - Had to handle union types
+const response = await firstValueFrom(this.httpService.get('/api/data'));
+if ('data' in response) {
+  return response.data; // Type guard needed
+}
+
+// After (v0.4.x) - Direct access
+const response = await firstValueFrom(this.httpService.get('/api/data'));
+return response.data; // Always available!
+```
+
+#### If you were using native mode
+
+You'll need to update your code to work with axios-compatible responses:
+
+```typescript
+// Before (v0.3.x) - Raw Undici response
+const response = await firstValueFrom(
+  this.httpService.request('https://api.example.com/data')
+);
+const data = await response.body.json();
+
+// After (v0.4.x) - Axios-compatible response
+const response = await firstValueFrom(
+  this.httpService.get('https://api.example.com/data')
+);
+const data = response.data; // Already parsed!
+```
+
+### Need Raw Undici Responses?
+
+If you absolutely need raw Undici responses, you can create a custom interceptor:
+
+```typescript
+const rawResponseInterceptor = (request, next) => {
+  return next.handle(request).pipe(
+    map(response => {
+      // Extract raw response from axios-compatible format
+      // Note: This is not recommended as you lose the benefits of axios compatibility
+      return response._rawResponse; // If available
+    })
+  );
+};
+```
+
+### Response Structure (v0.4.x)
+
+All responses now follow the axios-compatible structure:
+
+```typescript
+{
+  data: any,          // Parsed response body
+  status: number,     // HTTP status code  
+  statusText: string, // HTTP status text
+  headers: object,    // Response headers
+  config: object      // Request configuration
+}
+```
+
+This makes the library a true drop-in replacement for @nestjs/axios!
 
 ## API Reference
 

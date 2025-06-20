@@ -17,41 +17,38 @@ export class TodoService {
   constructor(private readonly httpService: HttpService) {}
 
   /**
-   * Example showing native Undici response handling
+   * Example showing axios-compatible response handling (always default in v0.4.0+)
    */
-  async getTodoNative(id: number): Promise<Todo> {
+  async getTodo(id: number): Promise<Todo> {
     const response = await lastValueFrom(
-      this.httpService.request(`https://jsonplaceholder.typicode.com/todos/${id}`)
+      this.httpService.get<Todo>(`https://jsonplaceholder.typicode.com/todos/${id}`)
     );
     
-    // Native Undici: need to parse body manually
-    const data = await response.body.json();
-    console.log('Native response statusCode:', response.statusCode);
+    // Responses are always axios-compatible!
+    console.log('Response status:', response.status);
+    console.log('Response statusText:', response.statusText);
     
-    return data;
+    return response.data; // 🎉 Direct access to parsed data!
   }
 
   /**
-   * Example showing Axios-compatible response handling
+   * Using convenience methods with type safety
    */
-  async getTodoAxiosStyle(id: number): Promise<Todo> {
+  async createTodo(todo: Omit<Todo, 'id'>): Promise<Todo> {
     const response = await lastValueFrom(
-      this.httpService.request(`https://jsonplaceholder.typicode.com/todos/${id}`)
+      this.httpService.post<Todo>('https://jsonplaceholder.typicode.com/todos', todo)
     );
     
-    // With axios adapter: data is already parsed!
-    console.log('Axios-style response status:', response.status);
-    console.log('Axios-style response statusText:', response.statusText);
-    
-    return response.data; // 🎉 Works like Axios!
+    console.log('Created todo with ID:', response.data.id);
+    return response.data;
   }
 
   /**
-   * Using RxJS operators with Axios-style responses
+   * Using RxJS operators with axios-style responses
    */
   async getTodoTitle(id: number): Promise<string> {
     return await firstValueFrom(
-      this.httpService.request(`https://jsonplaceholder.typicode.com/todos/${id}`).pipe(
+      this.httpService.get<Todo>(`https://jsonplaceholder.typicode.com/todos/${id}`).pipe(
         map(response => response.data.title) // Direct access to data!
       )
     );
@@ -63,7 +60,7 @@ export class TodoService {
   async getTodos(ids: number[]): Promise<Todo[]> {
     const requests = ids.map(id => 
       firstValueFrom(
-        this.httpService.request(`https://jsonplaceholder.typicode.com/todos/${id}`).pipe(
+        this.httpService.get<Todo>(`https://jsonplaceholder.typicode.com/todos/${id}`).pipe(
           map(res => res.data)
         )
       )
@@ -73,80 +70,68 @@ export class TodoService {
   }
 }
 
-// Native module (without axios adapter)
+// Module configuration (always axios-compatible in v0.4.0+)
 @Module({
   imports: [HttpModule.register({ timeout: 5000 })],
   providers: [TodoService],
 })
-export class NativeModule {}
+export class AppModule {}
 
-// Axios-compatible module
-@Module({
-  imports: [HttpModule.registerAxiosCompatible({ timeout: 5000 })],
-  providers: [TodoService],
-})
-export class AxiosCompatModule {}
-
-async function demonstrateComparison() {
-  console.log('🔍 Comparing Native vs Axios-Compatible Responses\n');
+async function demonstrateAxiosCompatibility() {
+  console.log('🎯 Demonstrating Axios-Compatible Features (v0.4.0+)\n');
   
-  // Test with native response handling
-  console.log('1️⃣ Native Undici Response Handling:');
+  const app = await NestFactory.create(AppModule);
+  const todoService = app.get(TodoService);
+  
+  // Test 1: GET request with typed response
+  console.log('1️⃣ GET Request:');
   console.log('----------------------------------------');
-  const nativeApp = await NestFactory.create(NativeModule);
-  const nativeService = nativeApp.get(TodoService);
+  const todo = await todoService.getTodo(1);
+  console.log('✅ Retrieved todo:', todo.title);
   
-  try {
-    const todo = await nativeService.getTodoNative(1);
-    console.log('✅ Success:', todo.title);
-  } catch (error) {
-    console.log('❌ Error:', error.message);
-  }
-  
-  await nativeApp.close();
-  
-  // Test with axios-compatible response handling
-  console.log('\n2️⃣ Axios-Compatible Response Handling:');
+  // Test 2: POST request
+  console.log('\n2️⃣ POST Request:');
   console.log('----------------------------------------');
-  const axiosApp = await NestFactory.create(AxiosCompatModule);
-  const axiosService = axiosApp.get(TodoService);
+  const newTodo = await todoService.createTodo({
+    userId: 1,
+    title: 'Test axios compatibility',
+    completed: false
+  });
+  console.log('✅ Created todo with ID:', newTodo.id);
   
-  const todo = await axiosService.getTodoAxiosStyle(1);
-  console.log('✅ Success:', todo.title);
-  
-  // Test RxJS operators
+  // Test 3: RxJS operators
   console.log('\n3️⃣ Using RxJS Operators:');
   console.log('----------------------------------------');
-  const title = await axiosService.getTodoTitle(2);
+  const title = await todoService.getTodoTitle(2);
   console.log('✅ Todo title:', title);
   
-  // Test batch operations
+  // Test 4: Batch operations
   console.log('\n4️⃣ Batch Operations:');
   console.log('----------------------------------------');
-  const todos = await axiosService.getTodos([1, 2, 3]);
+  const todos = await todoService.getTodos([1, 2, 3]);
   console.log('✅ Fetched', todos.length, 'todos');
   todos.forEach(todo => {
     console.log(`   - ${todo.id}: ${todo.title.substring(0, 40)}...`);
   });
   
-  await axiosApp.close();
+  await app.close();
 }
 
 // Main execution
 async function bootstrap() {
   try {
-    await demonstrateComparison();
+    await demonstrateAxiosCompatibility();
     
-    console.log('\n✨ Key Benefits of Axios Compatibility Mode:');
+    console.log('\n✨ Key Features in v0.4.0:');
     console.log('------------------------------------------------');
-    console.log('1. No need to manually parse response.body');
-    console.log('2. Access data directly via response.data');
-    console.log('3. Compatible with existing Axios code patterns');
-    console.log('4. Works seamlessly with RxJS operators');
+    console.log('1. Axios-compatible responses are ALWAYS returned');
+    console.log('2. Direct access to parsed data via response.data');
+    console.log('3. Full TypeScript support with generics');
+    console.log('4. Drop-in replacement for @nestjs/axios');
     console.log('5. Maintains Undici\'s performance benefits');
-    console.log('\n🚀 Migration is as simple as:');
-    console.log('   - Change: HttpModule.register(...)');
-    console.log('   - To:     HttpModule.registerAxiosCompatible(...)');
+    console.log('\n🚀 Migration from @nestjs/axios:');
+    console.log('   - Just change the import statement!');
+    console.log('   - All your existing code will work');
     
   } catch (error) {
     console.error('Error:', error);

@@ -37,7 +37,7 @@ describe('Complete Axios Compatibility Test', () => {
 
     beforeEach(async () => {
       module = await Test.createTestingModule({
-        imports: [HttpModule.registerAxiosCompatible({ timeout: 5000 })],
+        imports: [HttpModule.register({ timeout: 5000 })],
       }).compile();
 
       httpService = module.get<HttpService>(HttpService);
@@ -250,7 +250,7 @@ describe('Complete Axios Compatibility Test', () => {
 
     beforeEach(async () => {
       module = await Test.createTestingModule({
-        imports: [HttpModule.registerAxiosCompatible()],
+        imports: [HttpModule.register()],
       }).compile();
 
       httpService = module.get<HttpService>(HttpService);

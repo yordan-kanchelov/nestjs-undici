@@ -8,7 +8,7 @@ describe('HttpService', () => {
 
     beforeAll(async () => {
         const module: TestingModule = await Test.createTestingModule({
-            imports: [HttpModule.register({})],
+            imports: [HttpModule.register({})], // Default is now axios-compatible
         }).compile();
 
         service = module.get<HttpService>(HttpService);
@@ -21,7 +21,7 @@ describe('HttpService', () => {
         });
 
         result.subscribe(response => {
-            expect(response?.statusCode).toBe(200);
+            expect(response?.status).toBe(200); // axios-compatible property
         });
     });
 });

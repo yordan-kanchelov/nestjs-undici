@@ -70,7 +70,7 @@ describe('Axios Real-World Scenarios', () => {
 
     it('should handle token refresh with axios-compatible interceptors', async () => {
       const module = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       const httpService = module.get<UndiciHttpService>(UndiciHttpService);
@@ -152,7 +152,7 @@ describe('Axios Real-World Scenarios', () => {
       const logs: any[] = [];
 
       const module = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       const httpService = module.get<UndiciHttpService>(UndiciHttpService);
@@ -214,7 +214,7 @@ describe('Axios Real-World Scenarios', () => {
 
     it('should retry failed requests with exponential backoff', async () => {
       const module = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       const httpService = module.get<UndiciHttpService>(UndiciHttpService);
@@ -266,7 +266,7 @@ describe('Axios Real-World Scenarios', () => {
 
     it('should support request timeout', async () => {
       const module = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       const httpService = module.get<UndiciHttpService>(UndiciHttpService);
@@ -319,7 +319,7 @@ describe('Axios Real-World Scenarios', () => {
 
     it('should track download progress', async () => {
       const module = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       const httpService = module.get<UndiciHttpService>(UndiciHttpService);
@@ -379,7 +379,7 @@ describe('Axios Real-World Scenarios', () => {
 
     it('should handle rate limiting with interceptors', async () => {
       const module = await Test.createTestingModule({
-        imports: [UndiciHttpModule.registerAxiosCompatible()],
+        imports: [UndiciHttpModule.register()],
       }).compile();
 
       const httpService = module.get<UndiciHttpService>(UndiciHttpService);
