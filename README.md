@@ -27,6 +27,7 @@ This fork adds the following features to the original package:
 - 🔍 Built-in request/response interceptors
 - 🔄 Automatic retry mechanism
 - 📝 Comprehensive documentation
+- 🎯 **Axios Compatibility Mode**: Drop-in replacement for @nestjs/axios
 
 ## Installation
 
@@ -211,6 +212,92 @@ export class MyService {
   }
 }
 ```
+
+### Axios Compatibility Mode
+
+For easier migration from `@nestjs/axios`, this fork provides an Axios compatibility mode that transforms Undici responses to match the Axios response structure:
+
+```typescript
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+
+// Enable Axios compatibility mode - it's that simple!
+@Module({
+  imports: [
+    HttpModule.registerAxiosCompatible({
+      timeout: 5000,
+      // ... other options
+    })
+  ],
+})
+export class AppModule {}
+
+// Your existing Axios code works without changes!
+@Injectable()
+export class MyService {
+  constructor(private httpService: HttpService) {}
+  
+  async getData() {
+    const response = await lastValueFrom(
+      this.httpService.get('https://api.example.com/data')
+    );
+    
+    // Works exactly like Axios!
+    return response.data;  // Already parsed JSON
+  }
+}
+```
+
+With Axios compatibility mode, responses have the familiar Axios structure:
+- `response.data` - Parsed response body (JSON/text/Buffer)
+- `response.status` - HTTP status code (200, 404, etc.)
+- `response.statusText` - HTTP status text ("OK", "Not Found", etc.)
+- `response.headers` - Response headers
+- `response.config` - Request configuration
+
+**Important**: Just like Axios, responses with status codes >= 400 are thrown as errors with the same error structure as Axios (including `error.response`, `error.config`, and `error.isAxiosError`).
+
+#### Migration from @nestjs/axios
+
+Migration is incredibly simple - just two steps:
+
+1. **Replace the package import:**
+   ```typescript
+   // Before
+   import { HttpModule, HttpService } from '@nestjs/axios';
+   
+   // After
+   import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+   ```
+
+2. **Use `registerAxiosCompatible` instead of `register`:**
+   ```typescript
+   // Before
+   HttpModule.register({ timeout: 5000 })
+   
+   // After
+   HttpModule.registerAxiosCompatible({ timeout: 5000 })
+   ```
+
+That's it! Your existing code continues to work without any other changes. You get:
+- ✅ Same response structure as Axios
+- ✅ All convenience methods (get, post, put, delete, patch, etc.)
+- ✅ Better performance with Undici
+- ✅ Full compatibility with existing code
+- ✅ Support for all RxJS operators
+- ✅ TypeScript types work as expected
+
+##### Supported Convenience Methods
+All the familiar Axios methods are available:
+- `httpService.get(url, config?)`
+- `httpService.post(url, data?, config?)`
+- `httpService.put(url, data?, config?)`
+- `httpService.delete(url, config?)`
+- `httpService.patch(url, data?, config?)`
+- `httpService.head(url, config?)`
+- `httpService.options(url, config?)`
+- `httpService.postForm(url, data?, config?)`
+- `httpService.putForm(url, data?, config?)`
+- `httpService.patchForm(url, data?, config?)`
 
 ## API Reference
 

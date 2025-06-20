@@ -2,6 +2,7 @@ import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { randomStringGenerator } from '@nestjs/common/utils/random-string-generator.util';
 
 import { HttpService } from './services/http.service';
+import { axiosResponseAdapter } from './interceptors/axios-response-adapter.interceptor';
 
 import {
   UNDICI_INSTANCE_TOKEN,
@@ -92,6 +93,20 @@ export class HttpModule {
       ],
       exports: [HttpService],
     };
+  }
+
+  static registerAxiosCompatible(config: HttpModuleOptions = {}): DynamicModule {
+    // Add axios response adapter to interceptors
+    // User interceptors run first, then axios adapter transforms the final result
+    const interceptors = [
+      ...(config.interceptors || []),
+      axiosResponseAdapter
+    ];
+    
+    return HttpModule.register({
+      ...config,
+      interceptors,
+    });
   }
 
   static registerAsync(options: HttpModuleAsyncOptions): DynamicModule {

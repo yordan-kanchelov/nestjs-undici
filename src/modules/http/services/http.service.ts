@@ -14,10 +14,11 @@ import type { HttpInterceptor, HttpInterceptorFunction, HttpInterceptorHandler, 
 @Injectable()
 export class HttpService {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
+  private axiosCompatible = false;
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
-    protected readonly options: UndiciRequestOptionsType,
+    protected readonly instanceOptions: UndiciRequestOptionsType,
     @Optional()
     @Inject(HTTP_MODULE_OPTIONS)
     private readonly moduleOptions?: HttpModuleOptions,
@@ -33,7 +34,7 @@ export class HttpService {
   }
   
   public setGlobalDispatcher(dispatcher: Dispatcher): void {
-    this.options.dispatcher = dispatcher;
+    this.instanceOptions.dispatcher = dispatcher;
   }
 
   public request(
@@ -45,7 +46,7 @@ export class HttpService {
       Partial<Pick<Dispatcher.RequestOptions, 'method'>>,
   ): Observable<Dispatcher.ResponseData> {
     const mergedOptions = {
-      ...this.options,
+      ...this.instanceOptions,
       ...options,
     };
 
@@ -108,7 +109,7 @@ export class HttpService {
   }
 
   public get undiciRef(): UndiciRequestOptionsType {
-    return this.options;
+    return this.instanceOptions;
   }
 
   public addInterceptor(interceptor: HttpInterceptor | HttpInterceptorFunction): void {
@@ -118,8 +119,210 @@ export class HttpService {
   public setInterceptors(interceptors: Array<HttpInterceptor | HttpInterceptorFunction>): void {
     this.interceptors = interceptors;
   }
+  
+  public setAxiosCompatible(value: boolean): void {
+    this.axiosCompatible = value;
+  }
 
   public get interceptorCount(): number {
     return this.interceptors.length;
+  }
+
+  /**
+   * Convenience method for GET requests
+   * @param url The URL to request
+   * @param config Optional configuration
+   */
+  public get<T = any>(
+    url: string | URL | UrlObject, 
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    return this.request(url, { ...config, method: 'GET' });
+  }
+
+  /**
+   * Convenience method for POST requests
+   * @param url The URL to request
+   * @param data The data to send in the body
+   * @param config Optional configuration
+   */
+  public post<T = any>(
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    const body = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
+    return this.request(url, { 
+      ...config, 
+      method: 'POST', 
+      body,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config?.headers
+      }
+    });
+  }
+
+  /**
+   * Convenience method for PUT requests
+   * @param url The URL to request
+   * @param data The data to send in the body
+   * @param config Optional configuration
+   */
+  public put<T = any>(
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    const body = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
+    return this.request(url, { 
+      ...config, 
+      method: 'PUT', 
+      body,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config?.headers
+      }
+    });
+  }
+
+  /**
+   * Convenience method for DELETE requests
+   * @param url The URL to request
+   * @param config Optional configuration
+   */
+  public delete<T = any>(
+    url: string | URL | UrlObject,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    return this.request(url, { ...config, method: 'DELETE' });
+  }
+
+  /**
+   * Convenience method for PATCH requests
+   * @param url The URL to request
+   * @param data The data to send in the body
+   * @param config Optional configuration
+   */
+  public patch<T = any>(
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    const body = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : undefined;
+    return this.request(url, { 
+      ...config, 
+      method: 'PATCH', 
+      body,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config?.headers
+      }
+    });
+  }
+
+  /**
+   * Convenience method for HEAD requests
+   * @param url The URL to request
+   * @param config Optional configuration
+   */
+  public head<T = any>(
+    url: string | URL | UrlObject,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    return this.request(url, { ...config, method: 'HEAD' });
+  }
+
+  /**
+   * Convenience method for OPTIONS requests
+   * @param url The URL to request
+   * @param config Optional configuration
+   */
+  public options<T = any>(
+    url: string | URL | UrlObject,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    return this.request(url, { ...config, method: 'OPTIONS' });
+  }
+
+  /**
+   * Convenience method for POST requests with form data
+   * @param url The URL to request
+   * @param data The form data to send
+   * @param config Optional configuration
+   */
+  public postForm<T = any>(
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    const body = this.createFormData(data);
+    return this.request(url, { 
+      ...config, 
+      method: 'POST', 
+      body,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...config?.headers
+      }
+    });
+  }
+
+  /**
+   * Convenience method for PUT requests with form data
+   * @param url The URL to request
+   * @param data The form data to send
+   * @param config Optional configuration
+   */
+  public putForm<T = any>(
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    const body = this.createFormData(data);
+    return this.request(url, { 
+      ...config, 
+      method: 'PUT', 
+      body,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...config?.headers
+      }
+    });
+  }
+
+  /**
+   * Convenience method for PATCH requests with form data
+   * @param url The URL to request
+   * @param data The form data to send
+   * @param config Optional configuration
+   */
+  public patchForm<T = any>(
+    url: string | URL | UrlObject,
+    data?: any,
+    config?: Omit<Dispatcher.RequestOptions, 'origin' | 'path' | 'method' | 'body'>
+  ): Observable<Dispatcher.ResponseData> {
+    const body = this.createFormData(data);
+    return this.request(url, { 
+      ...config, 
+      method: 'PATCH', 
+      body,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...config?.headers
+      }
+    });
+  }
+
+  /**
+   * Helper method to create form data string from object
+   */
+  private createFormData(data: any): string {
+    if (!data) return '';
+    if (typeof data === 'string') return data;
+    
+    return Object.entries(data)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join('&');
   }
 }

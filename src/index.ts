@@ -8,3 +8,5 @@ export * from './modules/http/constants/http.constants';
 
 export * from './modules/http/services';
 export * from './modules/http/services/http.service';
+
+export * from './modules/http/interceptors';
