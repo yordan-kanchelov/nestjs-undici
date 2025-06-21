@@ -325,7 +325,7 @@ describe('Axios Full Compatibility E2E Tests', () => {
           // Both Axios and Undici should throw on redirects when maxRedirects is 0
           expect(axiosRes).toBeInstanceOf(Error);
           expect((axiosRes as any).response?.status).toBe(code);
-          
+
           expect(undiciRes).toBeInstanceOf(Error);
           expect((undiciRes as any).response?.status).toBe(code);
           expect((undiciRes as any).response?.statusText).toBe(text);
