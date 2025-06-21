@@ -94,33 +94,32 @@ describe('Axios Real-World Scenarios', () => {
       // Add response interceptor to handle 401 and refresh token
       httpService.addInterceptor((request, next) => {
         return next.handle(request).pipe(
-          mergeMap(async (response: any) => {
-            // Check if we got a 401 response (raw Undici response)
-            if (response.statusCode === 401 && !request.url.toString().includes('refresh-token')) {
+          catchError((error) => {
+            // With axios adapter, errors have response property
+            if (error.response?.status === 401 && !request.url.toString().includes('refresh-token')) {
               // Refresh token
-              const refreshResponse: any = await firstValueFrom(
-                httpService.request(`${serverUrl}/refresh-token`, { method: 'POST' })
+              return httpService.request(`${serverUrl}/refresh-token`, { method: 'POST' }).pipe(
+                mergeMap((refreshResponse: any) => {
+                  authToken = refreshResponse.data.access_token;
+                  
+                  // Retry original request with new token
+                  const retryRequest = {
+                    ...request,
+                    options: {
+                      ...request.options,
+                      headers: {
+                        ...request.options.headers,
+                        Authorization: `Bearer ${authToken}`,
+                      },
+                    },
+                  };
+                  
+                  // Make the retry request
+                  return next.handle(retryRequest);
+                })
               );
-              // The refresh response is already in axios format
-              const data = refreshResponse.data || await refreshResponse.body?.json();
-              authToken = data.access_token;
-              
-              // Retry original request with new token
-              const retryRequest = {
-                ...request,
-                options: {
-                  ...request.options,
-                  headers: {
-                    ...request.options.headers,
-                    Authorization: `Bearer ${authToken}`,
-                  },
-                },
-              };
-              
-              // Make the retry request
-              return firstValueFrom(next.handle(retryRequest));
             }
-            return response;
+            return throwError(() => error);
           }),
         );
       });

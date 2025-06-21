@@ -18,6 +18,9 @@ This fork adds the following features to the original package:
 - ✅ **Class-based interceptors**: Injectable classes implementing the HttpInterceptor interface
 - ✅ **Dynamic interceptor registration**: Add interceptors at runtime
 - ✅ **Axios-Compatible Responses**: All responses are now axios-compatible (v0.4.0+)
+- 🆕 **Axios-style Interceptor API** (v0.5.0+): Use familiar `httpService.axiosRef.interceptors` syntax
+- 🆕 **registerAxiosCompatible()** (v0.5.0+): Automatic configuration mapping from axios to undici
+- 🆕 **Enhanced Migration Support** (v0.5.0+): Drop-in replacement with minimal code changes
 
 ## Features
 
@@ -92,17 +95,72 @@ export class AppService {
 
 ## Migration from @nestjs/axios
 
-Starting from v0.4.0, migrating from @nestjs/axios is as simple as changing the import:
+### Quick Migration (v0.5.0+)
+
+The new `registerAxiosCompatible()` method and `axiosRef` API make migration even easier:
 
 ```typescript
 // Before
-import { HttpService } from '@nestjs/axios';
+import { HttpModule, HttpService } from '@nestjs/axios';
 
-// After
-import { HttpService } from 'nestjs-undici-interceptors';
+@Module({
+  imports: [
+    HttpModule.register({
+      timeout: 5000,
+      maxRedirects: 5,
+    })
+  ]
+})
+
+// After - Option 1: Maximum compatibility
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+
+@Module({
+  imports: [
+    HttpModule.registerAxiosCompatible({  // Just add "AxiosCompatible"
+      timeout: 5000,
+      maxRedirects: 5,
+    })
+  ]
+})
+
+// After - Option 2: Standard migration
+import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
+
+@Module({
+  imports: [
+    HttpModule.register({
+      timeout: 5000,
+      maxRedirections: 5,  // Note: property name differs
+    })
+  ]
+})
 ```
 
-The API is fully compatible, so your existing code will continue to work!
+### Axios-style Interceptors (v0.5.0+)
+
+```typescript
+// Your existing axios interceptor code now works!
+this.httpService.axiosRef.interceptors.request.use(
+  (config) => {
+    config.headers['Authorization'] = 'Bearer token';
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+this.httpService.axiosRef.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+See the [Axios Migration Guide](docs/axios-migration-guide.md) for detailed migration instructions.
 
 ## Configuration Options
 

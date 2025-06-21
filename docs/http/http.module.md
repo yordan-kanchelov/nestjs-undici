@@ -104,7 +104,26 @@ HttpModule.register({
 
 ## Migration from @nestjs/axios
 
-While nestjs-undici-interceptors provides axios-compatible responses, there are some API differences to consider when migrating:
+nestjs-undici-interceptors now provides enhanced axios compatibility, making migration much simpler:
+
+### Automatic Axios Configuration Detection
+
+The `HttpModule.register()` method now automatically detects and handles axios-style configuration:
+
+```typescript
+HttpModule.register({
+  // These axios options are automatically detected and mapped!
+  baseURL: 'https://api.example.com',
+  timeout: 5000,
+  maxRedirects: 5,
+  httpAgent: new http.Agent({ keepAlive: true }),
+  httpsAgent: new https.Agent({ keepAlive: true }),
+  auth: { username: 'user', password: 'pass' },
+  transformRequest: [(data) => JSON.stringify(data)],
+  transformResponse: [(data) => JSON.parse(data)],
+  validateStatus: (status) => status < 400,
+})
+```
 
 ### Response Handling (Compatible ✅)
 ```typescript
@@ -115,15 +134,15 @@ console.log(response.status);  // ✅ Works the same
 console.log(response.headers); // ✅ Works the same
 ```
 
-### Interceptors (Different API ⚠️)
+### Interceptors (Both APIs Supported! ✅)
 ```typescript
-// Axios
+// Option 1: Use axios-style interceptors (NEW!)
 httpService.axiosRef.interceptors.request.use((config) => {
   config.headers['Authorization'] = 'Bearer token';
   return config;
 });
 
-// Undici
+// Option 2: Use undici-style interceptors (more control)
 httpService.addInterceptor((request, next) => {
   const updatedRequest = {
     ...request,
@@ -137,26 +156,30 @@ httpService.addInterceptor((request, next) => {
   };
   return next.handle(updatedRequest);
 });
+
+// Both APIs can be used together!
 ```
 
-### Configuration Options (Different ⚠️)
+### Configuration Options (Automatically Mapped! ✅)
 ```typescript
-// Axios
+// This axios configuration now works directly!
 HttpModule.register({
   httpAgent: new http.Agent({ keepAlive: true }),
   httpsAgent: new https.Agent({ keepAlive: true }),
-  maxRedirects: 5,
-});
-
-// Undici
-HttpModule.register({
-  // Different configuration options
-  maxRedirections: 5,
-  // Agent configuration is handled differently
+  maxRedirects: 5,  // Automatically mapped to maxRedirections
+  baseURL: 'https://api.example.com',
+  auth: { username: 'user', password: 'pass' },
+  // ... other axios options
 });
 ```
 
-See the [migration example](https://github.com/yordan-kanchelov/nestjs-undici-fork/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts) for detailed patterns.
+The library automatically:
+- Detects axios-style configuration options
+- Maps them to undici equivalents where possible
+- Logs warnings for unsupported features
+- Converts transformRequest/transformResponse to interceptors
+
+See the [migration example](https://github.com/yordan-kanchelov/nestjs-undici-fork/blob/main/examples/interceptor-demo/src/axios-to-undici-migration.ts) and [enhanced compatibility demo](https://github.com/yordan-kanchelov/nestjs-undici-fork/blob/main/examples/interceptor-demo/src/enhanced-axios-compatibility.ts) for detailed patterns.
 
 ## Available Options
 

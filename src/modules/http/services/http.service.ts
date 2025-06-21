@@ -19,11 +19,18 @@ import type {
   HttpInterceptorRequest,
   AxiosCompatibleRequestOptions,
   AxiosLikeResponse,
+  AxiosRef,
 } from '../interfaces';
+import {
+  createAxiosRequestInterceptorManager,
+  createAxiosResponseInterceptorManager,
+} from '../adapters/axios-interceptor.adapter';
+import { axiosResponseAdapter } from '../interceptors/axios-response-adapter.interceptor';
 
 @Injectable()
 export class HttpService {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
+  private _axiosRef: AxiosRef;
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -40,6 +47,14 @@ export class HttpService {
         .filter(interceptor => typeof interceptor === 'function')
         .map(interceptor => interceptor as HttpInterceptorFunction);
     }
+
+    // Initialize axios-compatible interceptor managers
+    this._axiosRef = {
+      interceptors: {
+        request: createAxiosRequestInterceptorManager((interceptor) => this.addInterceptor(interceptor)),
+        response: createAxiosResponseInterceptorManager((interceptor) => this.addInterceptor(interceptor)),
+      },
+    };
   }
 
   public setGlobalDispatcher(dispatcher: Dispatcher): void {
@@ -67,9 +82,21 @@ export class HttpService {
       mergedOptions.bodyTimeout = timeout;
     }
 
+    // Handle axios-specific options from module configuration
+    let finalUrl = url;
+    const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
+    
+    if (axiosCompat?.baseURL) {
+      // Apply baseURL if the URL is relative
+      const urlString = typeof url === 'string' ? url : url.toString();
+      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
+      }
+    }
+
     // Create the request object for interceptors
     const interceptorRequest: HttpInterceptorRequest = {
-      url,
+      url: finalUrl,
       options: mergedOptions,
     };
 
@@ -101,12 +128,17 @@ export class HttpService {
   private executeInterceptorChain<T = any>(
     request: HttpInterceptorRequest,
   ): Observable<any> {
-    const handler = this.createInterceptorHandler<T>(0);
+    // Always include axios response adapter as the last interceptor
+    const allInterceptors = [...this.interceptors, axiosResponseAdapter];
+    const handler = this.createInterceptorHandler<T>(0, allInterceptors);
     return handler.handle(request);
   }
 
-  private createInterceptorHandler<T = any>(index: number): HttpInterceptorHandler {
-    if (index >= this.interceptors.length) {
+  private createInterceptorHandler<T = any>(
+    index: number, 
+    interceptors: Array<HttpInterceptor | HttpInterceptorFunction>
+  ): HttpInterceptorHandler {
+    if (index >= interceptors.length) {
       // End of chain - execute the actual request
       return {
         handle: (request: HttpInterceptorRequest) =>
@@ -114,8 +146,8 @@ export class HttpService {
       };
     }
 
-    const interceptor = this.interceptors[index];
-    const nextHandler = this.createInterceptorHandler<T>(index + 1);
+    const interceptor = interceptors[index];
+    const nextHandler = this.createInterceptorHandler<T>(index + 1, interceptors);
 
     return {
       handle: (request: HttpInterceptorRequest) => {
@@ -132,6 +164,14 @@ export class HttpService {
     return this.instanceOptions;
   }
 
+  /**
+   * Axios-compatible reference for interceptor management
+   * Provides axios-style API: httpService.axiosRef.interceptors.request.use()
+   */
+  public get axiosRef(): AxiosRef {
+    return this._axiosRef;
+  }
+
   public addInterceptor(
     interceptor: HttpInterceptor | HttpInterceptorFunction,
   ): void {
@@ -146,7 +186,8 @@ export class HttpService {
 
 
   public get interceptorCount(): number {
-    return this.interceptors.length;
+    // Include the axios response adapter which is always added
+    return this.interceptors.length + 1;
   }
 
   /**

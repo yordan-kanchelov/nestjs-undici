@@ -1,8 +1,10 @@
 import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { randomStringGenerator } from '@nestjs/common/utils/random-string-generator.util';
+import { map } from 'rxjs/operators';
 
 import { HttpService } from './services/http.service';
 import { axiosResponseAdapter } from './interceptors/axios-response-adapter.interceptor';
+import { mapAxiosConfigToUndici, getAxiosCompatibilityWarnings } from './adapters/axios-config.adapter';
 
 import {
   UNDICI_INSTANCE_TOKEN,
@@ -26,15 +28,91 @@ const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
   exports: [HttpService],
 })
 export class HttpModule {
-  static register(config: HttpModuleOptions = {}): DynamicModule {
-    // Add axios response adapter to interceptors
-    // User interceptors run first, then axios adapter transforms the final result
-    const interceptors = [
-      ...(config.interceptors || []),
-      axiosResponseAdapter
-    ];
+  static register(config: HttpModuleOptions & any = {}): DynamicModule {
+    // Check if this looks like axios configuration
+    const hasAxiosOptions = !!(
+      config.httpAgent || 
+      config.httpsAgent || 
+      config.maxRedirects !== undefined ||
+      config.auth ||
+      config.baseURL ||
+      config.validateStatus ||
+      config.transformRequest ||
+      config.transformResponse ||
+      config.withCredentials ||
+      config.xsrfCookieName ||
+      config.xsrfHeaderName
+    );
+
+    let processedConfig = config;
     
-    const { interceptors: _, ...undiciOptions } = config;
+    // If axios-style options detected, map them to undici options
+    if (hasAxiosOptions) {
+      const warnings = getAxiosCompatibilityWarnings(config);
+      if (warnings.length > 0) {
+        console.warn('[nestjs-undici-interceptors] Axios compatibility warnings:');
+        warnings.forEach(warning => console.warn(`  - ${warning}`));
+      }
+      
+      // Map axios config to undici config
+      const mappedConfig = mapAxiosConfigToUndici(config);
+      
+      // Convert axios transformRequest/transformResponse to interceptors
+      const additionalInterceptors: HttpInterceptorFunction[] = [];
+      
+      if (config.transformRequest) {
+        const transforms = Array.isArray(config.transformRequest) ? config.transformRequest : [config.transformRequest];
+        transforms.forEach(transform => {
+          additionalInterceptors.push((request, next) => {
+            // Apply transform to request data
+            if (request.options.body) {
+              const transformedData = transform(request.options.body, request.options.headers);
+              return next.handle({
+                ...request,
+                options: {
+                  ...request.options,
+                  body: transformedData,
+                },
+              });
+            }
+            return next.handle(request);
+          });
+        });
+      }
+      
+      if (config.transformResponse) {
+        const transforms = Array.isArray(config.transformResponse) ? config.transformResponse : [config.transformResponse];
+        transforms.forEach(transform => {
+          additionalInterceptors.push((request, next) => {
+            return next.handle(request).pipe(
+              map(response => {
+                if (response && typeof response === 'object' && 'data' in response) {
+                  const transformedData = transform(response.data);
+                  return {
+                    ...response,
+                    data: transformedData,
+                  };
+                }
+                return response;
+              })
+            );
+          });
+        });
+      }
+      
+      // Merge with original config, preserving any undici-specific options
+      processedConfig = {
+        ...mappedConfig,
+        ...config,
+        // Ensure interceptors are preserved and include transform interceptors
+        interceptors: [...additionalInterceptors, ...(config.interceptors || [])],
+      };
+    }
+    
+    // Extract interceptors - axios response adapter will be added in the service
+    const interceptors = processedConfig.interceptors || [];
+    
+    const { interceptors: _, ...undiciOptions } = processedConfig;
     
     // Separate function and class interceptors
     const functionInterceptors: HttpInterceptorFunction[] = [];
@@ -123,9 +201,9 @@ export class HttpModule {
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
           useFactory: (config: HttpModuleOptions) => {
-            // Get base interceptors and always add axios response adapter
+            // Get base interceptors - axios response adapter is added in the service
             const baseInterceptors = config.interceptors?.filter(i => typeof i === 'function') || [];
-            return [...baseInterceptors, axiosResponseAdapter];
+            return baseInterceptors;
           },
           inject: [HTTP_MODULE_OPTIONS],
         },
@@ -175,5 +253,36 @@ export class HttpModule {
         optionsFactory.createHttpOptions(),
       inject: [options.useExisting || options.useClass],
     };
+  }
+
+  /**
+   * Register module with axios compatibility mode
+   * This method provides maximum compatibility with @nestjs/axios
+   * 
+   * @param axiosConfig Axios-style configuration options
+   * @returns Dynamic module configured for axios compatibility
+   */
+  static registerAxiosCompatible(axiosConfig: any = {}): DynamicModule {
+    // Extract interceptors if provided in axios style
+    const axiosInterceptors = axiosConfig.interceptors || [];
+    delete axiosConfig.interceptors;
+
+    // Map axios config to undici config
+    const undiciConfig = mapAxiosConfigToUndici(axiosConfig);
+
+    // Show warnings for unsupported features
+    const warnings = getAxiosCompatibilityWarnings(axiosConfig);
+    if (warnings.length > 0) {
+      console.warn('⚠️  Axios compatibility warnings:');
+      warnings.forEach(warning => console.warn(`   - ${warning}`));
+    }
+
+    // Configure with mapped options and interceptors
+    const config: HttpModuleOptions = {
+      ...undiciConfig,
+      interceptors: axiosInterceptors,
+    };
+
+    return this.register(config);
   }
 }

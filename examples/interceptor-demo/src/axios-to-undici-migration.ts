@@ -5,8 +5,10 @@ import * as http from 'http';
 import * as https from 'https';
 
 /**
- * This example demonstrates ACTUAL migration patterns from @nestjs/axios to nestjs-undici-interceptors
- * showing the real API differences and how to handle them.
+ * This example demonstrates migration patterns from @nestjs/axios to nestjs-undici-interceptors.
+ * 
+ * UPDATE: With enhanced axios compatibility, many axios features now work directly
+ * through HttpModule.register() without requiring code changes!
  */
 
 // ============================================
@@ -226,6 +228,52 @@ class ComplexMigrationExample {
 }
 
 // ============================================
+// SIMPLIFIED MIGRATION (NEW!)
+// ============================================
+
+/**
+ * With enhanced axios compatibility, most axios configurations
+ * now work directly without changes!
+ */
+@Module({
+  imports: [
+    // This axios configuration now works with nestjs-undici-interceptors!
+    UndiciHttpModule.register({
+      baseURL: 'https://api.example.com',
+      timeout: 5000,
+      maxRedirects: 5,
+      httpAgent: new http.Agent({ keepAlive: true }),
+      httpsAgent: new https.Agent({ keepAlive: true }),
+      auth: { username: 'user', password: 'pass' },
+      transformRequest: [(data) => JSON.stringify(data)],
+      transformResponse: [(data) => JSON.parse(data)],
+    }),
+  ],
+})
+export class SimplifiedMigrationModule {}
+
+@Injectable()
+export class SimplifiedService implements OnModuleInit {
+  constructor(private readonly httpService: UndiciHttpService) {}
+
+  onModuleInit() {
+    // axios-style interceptors now work directly!
+    this.httpService.axiosRef.interceptors.request.use(
+      (config) => {
+        config.headers['Authorization'] = 'Bearer token';
+        return config;
+      }
+    );
+  }
+
+  async getData() {
+    // Same code as axios!
+    const response = await this.httpService.get('/api/data').toPromise();
+    return response.data;
+  }
+}
+
+// ============================================
 // DEMO
 // ============================================
 
@@ -235,16 +283,22 @@ async function demonstrateMigration() {
   // Both modules can coexist during migration
   const axiosApp = await NestFactory.create(AxiosModule);
   const undiciApp = await NestFactory.create(UndiciModule);
+  const simplifiedApp = await NestFactory.create(SimplifiedMigrationModule);
 
-  console.log('✅ Both Axios and Undici modules created successfully');
-  console.log('\n📝 Migration checklist:');
-  console.log('1. Update imports');
-  console.log('2. Modify interceptor implementations');
-  console.log('3. Adjust configuration options');
-  console.log('4. Test thoroughly - response handling remains the same!');
+  console.log('✅ All modules created successfully');
+  console.log('\n📝 Migration options:');
+  console.log('\n🎯 Option 1: Simplified Migration (Recommended)');
+  console.log('   - Just change the import statement');
+  console.log('   - Most axios configurations work directly');
+  console.log('   - axiosRef.interceptors API is available');
+  console.log('\n⚙️  Option 2: Full Migration');
+  console.log('   - Convert to undici-style interceptors for more control');
+  console.log('   - Adjust configuration options as needed');
+  console.log('\n🔍 The library automatically detects axios-style options and handles them!');
 
   await axiosApp.close();
   await undiciApp.close();
+  await simplifiedApp.close();
 }
 
 // Run the demo
