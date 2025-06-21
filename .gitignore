@@ -18,6 +18,10 @@ npm-debug.log
 # lib
 lib
 
+# build artifacts
+*.tsbuildinfo
+examples/interceptor-demo/dist/
+
 # enviroment
 .env
 *.env*
