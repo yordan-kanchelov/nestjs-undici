@@ -41,11 +41,13 @@ describe('HttpService - Axios Compatibility', () => {
     beforeEach(async () => {
       serverUrl = await createMockServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          headers: req.headers,
-          method: req.method,
-          url: req.url,
-        }));
+        res.end(
+          JSON.stringify({
+            headers: req.headers,
+            method: req.method,
+            url: req.url,
+          }),
+        );
       });
 
       module = await Test.createTestingModule({
@@ -58,11 +60,11 @@ describe('HttpService - Axios Compatibility', () => {
     it('should support axios-style request interceptors', async () => {
       // Add request interceptor
       const interceptorId = service.axiosRef.interceptors.request.use(
-        (config) => {
+        config => {
           config.headers = config.headers || {};
           config.headers['X-Test-Header'] = 'test-value';
           return config;
-        }
+        },
       );
 
       expect(interceptorId).toBeDefined();
@@ -75,13 +77,11 @@ describe('HttpService - Axios Compatibility', () => {
     it('should support axios-style response interceptors', async () => {
       let intercepted = false;
 
-      service.axiosRef.interceptors.response.use(
-        (response) => {
-          intercepted = true;
-          response.data.modified = true;
-          return response;
-        }
-      );
+      service.axiosRef.interceptors.response.use(response => {
+        intercepted = true;
+        response.data.modified = true;
+        return response;
+      });
 
       const response = await firstValueFrom(service.get(`${serverUrl}/test`));
       expect(intercepted).toBe(true);
@@ -92,10 +92,10 @@ describe('HttpService - Axios Compatibility', () => {
       let errorHandled = false;
 
       service.axiosRef.interceptors.request.use(
-        (config) => {
+        config => {
           throw new Error('Request interceptor error');
         },
-        (error) => {
+        error => {
           errorHandled = true;
           // Return a modified config to continue
           return {
@@ -103,7 +103,7 @@ describe('HttpService - Axios Compatibility', () => {
             method: 'GET',
             headers: { 'X-Error-Handled': 'true' },
           };
-        }
+        },
       );
 
       const response = await firstValueFrom(service.get(`${serverUrl}/test`));
@@ -113,7 +113,7 @@ describe('HttpService - Axios Compatibility', () => {
 
     it('should support error handling in response interceptors', async () => {
       // Create new server that returns 500 error
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(resolve => {
         if (mockServer) {
           mockServer.close(() => resolve());
           mockServer.closeAllConnections();
@@ -121,7 +121,7 @@ describe('HttpService - Axios Compatibility', () => {
           resolve();
         }
       });
-      
+
       serverUrl = await createMockServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Server error' }));
@@ -130,8 +130,8 @@ describe('HttpService - Axios Compatibility', () => {
       let errorHandled = false;
 
       service.axiosRef.interceptors.response.use(
-        (response) => response,
-        (error) => {
+        response => response,
+        error => {
           errorHandled = true;
           // Can return a modified response
           return {
@@ -141,7 +141,7 @@ describe('HttpService - Axios Compatibility', () => {
             headers: {},
             config: error.config,
           };
-        }
+        },
       );
 
       const response = await firstValueFrom(service.get(`${serverUrl}/test`));
@@ -153,25 +153,25 @@ describe('HttpService - Axios Compatibility', () => {
     it('should support multiple interceptors in order', async () => {
       const order: string[] = [];
 
-      service.axiosRef.interceptors.request.use((config) => {
+      service.axiosRef.interceptors.request.use(config => {
         order.push('request1');
         config.headers = config.headers || {};
         config.headers['X-First'] = 'first';
         return config;
       });
 
-      service.axiosRef.interceptors.request.use((config) => {
+      service.axiosRef.interceptors.request.use(config => {
         order.push('request2');
         config.headers['X-Second'] = 'second';
         return config;
       });
 
-      service.axiosRef.interceptors.response.use((response) => {
+      service.axiosRef.interceptors.response.use(response => {
         order.push('response1');
         return response;
       });
 
-      service.axiosRef.interceptors.response.use((response) => {
+      service.axiosRef.interceptors.response.use(response => {
         order.push('response2');
         return response;
       });
@@ -195,7 +195,7 @@ describe('HttpService - Axios Compatibility', () => {
           HttpModule.registerAxiosCompatible({
             timeout: 5000,
             maxRedirects: 10,
-            validateStatus: (status) => status < 500,
+            validateStatus: status => status < 500,
             // These should trigger warnings
             httpAgent: { keepAlive: true },
             proxy: { host: 'proxy.example.com', port: 8080 },
@@ -214,12 +214,18 @@ describe('HttpService - Axios Compatibility', () => {
       expect(undiciRef.maxRedirections).toBe(10);
 
       // Check warnings were shown
-      expect(consoleWarnSpy).toHaveBeenCalledWith('⚠️  Axios compatibility warnings:');
-      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('httpAgent'));
-      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('proxy'));
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '⚠️  Axios compatibility warnings:',
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('httpAgent'),
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('proxy'),
+      );
 
       consoleWarnSpy.mockRestore();
-      
+
       // No server needed for this test
       mockServer = null;
     });
@@ -237,7 +243,7 @@ describe('HttpService - Axios Compatibility', () => {
       service = module.get<HttpService>(HttpService);
 
       const response = await firstValueFrom(service.get(`${serverUrl}/test`));
-      
+
       // Should have axios-compatible response structure
       expect(response.data).toEqual({ message: 'test' });
       expect(response.status).toBe(200);
@@ -260,24 +266,29 @@ describe('HttpService - Axios Compatibility', () => {
 
       service = module.get<HttpService>(HttpService);
 
-      try {
-        await firstValueFrom(service.get(`${serverUrl}/not-found`));
-        fail('Should have thrown an error');
-      } catch (error: any) {
-        // Check axios error structure
-        expect(error.isAxiosError).toBe(true);
-        expect(error.response).toBeDefined();
-        expect(error.response.status).toBe(404);
-        expect(error.response.data).toEqual({ error: 'Not found' });
-        expect(error.request).toBeDefined();
-        expect(error.config).toBeDefined();
-        expect(error.toJSON).toBeDefined();
-        expect(error.toJSON()).toMatchObject({
-          message: expect.any(String),
-          name: expect.any(String),
+      await expect(
+        firstValueFrom(service.get(`${serverUrl}/not-found`))
+      ).rejects.toMatchObject({
+        isAxiosError: true,
+        response: expect.objectContaining({
           status: 404,
-        });
-      }
+          data: { error: 'Not found' },
+        }),
+        request: expect.anything(),
+        config: expect.anything(),
+      });
+
+      // Test the error toJSON method
+      const errorPromise = firstValueFrom(service.get(`${serverUrl}/not-found`));
+      await expect(errorPromise).rejects.toThrow();
+      
+      const error = await errorPromise.catch(e => e);
+      expect(error.toJSON).toBeDefined();
+      expect(error.toJSON()).toMatchObject({
+        message: expect.any(String),
+        name: expect.any(String),
+        status: 404,
+      });
     });
   });
 });
