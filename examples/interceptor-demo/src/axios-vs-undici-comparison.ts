@@ -2,6 +2,17 @@ import 'reflect-metadata';
 import { Module, Injectable } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
+/**
+ * IMPORTANT: While nestjs-undici-interceptors provides axios-compatible responses,
+ * there are some API differences to be aware of when migrating:
+ * 
+ * 1. Configuration options differ (httpAgent/httpsAgent vs custom options)
+ * 2. Interceptors API is different (axiosRef.interceptors vs addInterceptor())
+ * 3. Some axios-specific features may need adaptation
+ * 
+ * See the examples below for migration patterns.
+ */
+
 // Import both libraries for comparison
 import { HttpModule as AxiosHttpModule, HttpService as AxiosHttpService } from '@nestjs/axios';
 import { HttpModule as UndiciHttpModule, HttpService as UndiciHttpService } from 'nestjs-undici-interceptors';
