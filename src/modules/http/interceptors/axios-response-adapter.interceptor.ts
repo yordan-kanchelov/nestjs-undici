@@ -110,17 +110,39 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
           const contentType =
             (undiciResponse.headers['content-type'] as string) || '';
           let parsedData: any;
+          
+          // Check if maxContentLength is set in options
+          const maxContentLength = (request.options as any)?.maxContentLength;
 
           try {
             if (undiciResponse.body) {
               if (contentType.includes('application/json')) {
                 const text = await undiciResponse.body.text();
+                
+                // Check content length
+                if (maxContentLength && Buffer.byteLength(text) > maxContentLength) {
+                  const error: any = new Error(
+                    `maxContentLength size of ${maxContentLength} exceeded`
+                  );
+                  error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
+                  throw error;
+                }
+                
                 parsedData = text ? JSON.parse(text) : '';
               } else if (
                 contentType.includes('text/') ||
                 contentType.includes('application/xml')
               ) {
                 parsedData = await undiciResponse.body.text();
+                
+                // Check content length
+                if (maxContentLength && Buffer.byteLength(parsedData) > maxContentLength) {
+                  const error: any = new Error(
+                    `maxContentLength size of ${maxContentLength} exceeded`
+                  );
+                  error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
+                  throw error;
+                }
               } else if (
                 (undiciResponse.statusCode === 204 ||
                   undiciResponse.statusCode === 304) &&
@@ -135,15 +157,29 @@ export class AxiosResponseAdapterInterceptor implements HttpInterceptor {
                 }
               } else {
                 // For binary data, convert to Buffer
-                parsedData = Buffer.from(
-                  await undiciResponse.body.arrayBuffer(),
-                );
+                const arrayBuffer = await undiciResponse.body.arrayBuffer();
+                
+                // Check content length
+                if (maxContentLength && arrayBuffer.byteLength > maxContentLength) {
+                  const error: any = new Error(
+                    `maxContentLength size of ${maxContentLength} exceeded`
+                  );
+                  error.code = 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED';
+                  throw error;
+                }
+                
+                parsedData = Buffer.from(arrayBuffer);
               }
             } else {
               // Axios returns empty string for null body
               parsedData = '';
             }
           } catch (error) {
+            // If it's a size limit error, re-throw it
+            if ((error as any)?.code === 'ERR_FR_MAX_CONTENT_LENGTH_EXCEEDED') {
+              throw error;
+            }
+            
             // If parsing fails, try to get raw text
             try {
               parsedData = await undiciResponse.body.text();

@@ -179,7 +179,7 @@ async function demonstrateEnhancedCompatibility() {
     console.log('- Both axios and undici interceptor APIs work together');
     console.log('- transformRequest/transformResponse converted to interceptors');
     console.log('- Automatic warnings for unsupported features');
-    console.log('- No separate registerAxiosCompatible() needed!');
+    console.log('- No separate register() needed!');
 
   } catch (error) {
     console.error('❌ Error:', error);

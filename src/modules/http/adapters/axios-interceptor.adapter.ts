@@ -7,6 +7,7 @@ import type {
 } from '../interfaces/http-interceptor.interface';
 import type { AxiosLikeRequestConfig, AxiosLikeResponse } from '../interfaces/axios-compatible.interface';
 import type { AxiosInterceptorManager } from '../interfaces/axios-ref.interface';
+import { AxiosHeaders } from '../interfaces/axios-headers.interface';
 
 /**
  * Stored interceptor with metadata
@@ -23,9 +24,34 @@ interface StoredInterceptor<T> {
 function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpInterceptorRequest {
   const { url, method, headers, data, timeout, ...restConfig } = config;
   
+  // Normalize headers to plain object
+  const normalizedHeaders: Record<string, string | string[]> = {};
+  if (headers) {
+    if (headers instanceof AxiosHeaders) {
+      // AxiosHeaders instance
+      headers.forEach((value, key) => {
+        if (value !== null && value !== undefined) {
+          normalizedHeaders[key] = String(value);
+        }
+      });
+    } else if (typeof (headers as any).set === 'function' && typeof (headers as any).entries === 'function') {
+      // Headers API object
+      for (const [key, value] of (headers as any).entries()) {
+        normalizedHeaders[key] = value;
+      }
+    } else if (headers && typeof headers === 'object') {
+      // Plain object or record
+      Object.entries(headers).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          normalizedHeaders[key] = String(value);
+        }
+      });
+    }
+  }
+  
   const options: any = {
     method: method || 'GET',
-    headers: headers || {},
+    headers: normalizedHeaders,
   };
 
   // Handle body
@@ -63,10 +89,18 @@ function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpIn
 function interceptorRequestToAxiosConfig(request: HttpInterceptorRequest): AxiosLikeRequestConfig {
   const { url, options } = request;
   
+  // Convert headers to AxiosHeaders for better compatibility
+  const axiosHeaders = new AxiosHeaders();
+  if (options.headers && typeof options.headers === 'object') {
+    Object.entries(options.headers).forEach(([key, value]) => {
+      axiosHeaders.set(key, value as string | string[]);
+    });
+  }
+  
   return {
     url: typeof url === 'string' ? url : url.toString(),
     method: options.method,
-    headers: options.headers as Record<string, string | string[]>,
+    headers: axiosHeaders,
     data: options.body,
     timeout: options.headersTimeout || options.bodyTimeout,
     maxRedirects: options.maxRedirections,

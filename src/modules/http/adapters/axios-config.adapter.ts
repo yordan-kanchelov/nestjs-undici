@@ -1,6 +1,11 @@
 import type { HttpModuleOptions } from '../types';
 import type { Agent } from 'http';
 import type { Agent as HttpsAgent } from 'https';
+import { ProxyAgent } from 'undici';
+import { CookieAgent } from 'http-cookie-agent/undici';
+import { CookieJar } from 'tough-cookie';
+import type { HttpInterceptorFunction } from '../interfaces';
+import { createSizeLimitInterceptor } from '../interceptors/size-limit.interceptor';
 
 /**
  * Axios configuration options that need to be mapped
@@ -44,6 +49,7 @@ export interface AxiosConfigOptions {
  */
 export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpModuleOptions {
   const undiciConfig: HttpModuleOptions = {};
+  const interceptors: HttpInterceptorFunction[] = [];
 
   // Direct mappings
   if (axiosConfig.timeout !== undefined) {
@@ -55,24 +61,77 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
     undiciConfig.maxRedirections = axiosConfig.maxRedirects;
   }
 
+  // Handle size limits with interceptor
   if (axiosConfig.maxBodyLength !== undefined || axiosConfig.maxContentLength !== undefined) {
-    // Undici doesn't have direct equivalents, but we can use bodyTimeout as a safeguard
-    console.warn('maxBodyLength/maxContentLength are not directly supported in undici. Consider using bodyTimeout.');
+    // Create size limit interceptor
+    interceptors.push(createSizeLimitInterceptor({
+      maxBodyLength: axiosConfig.maxBodyLength,
+      maxContentLength: axiosConfig.maxContentLength,
+    }));
+    
+    // Also store in options for the response adapter
+    (undiciConfig as any).maxBodyLength = axiosConfig.maxBodyLength;
+    (undiciConfig as any).maxContentLength = axiosConfig.maxContentLength;
   }
 
-  // Agent configuration
+  // Handle httpAgent/httpsAgent - map to Undici Agent options
   if (axiosConfig.httpAgent || axiosConfig.httpsAgent) {
-    // Extract keepAlive and other options from agents
     const agent = axiosConfig.httpAgent || axiosConfig.httpsAgent;
-    if (agent && 'keepAlive' in agent) {
-      // Note: Undici has different connection pooling mechanisms
-      console.warn('httpAgent/httpsAgent configuration detected. Undici uses different connection pooling. Consider using Dispatcher options.');
+    
+    // Extract relevant options from Node.js Agent
+    if (agent && typeof agent === 'object') {
+      const agentOptions = agent as any;
+      
+      // Map keepAlive settings
+      if ('keepAlive' in agentOptions) {
+        undiciConfig.pipelining = agentOptions.keepAlive ? 1 : 0;
+      }
+      
+      // Map timeout settings
+      if ('timeout' in agentOptions && !axiosConfig.timeout) {
+        undiciConfig.headersTimeout = agentOptions.timeout;
+        undiciConfig.bodyTimeout = agentOptions.timeout;
+      }
+      
+      // Map maxSockets to connection limits
+      if ('maxSockets' in agentOptions) {
+        // Store for later use when creating dispatcher
+        (undiciConfig as any).__agentOptions = {
+          connections: agentOptions.maxSockets,
+        };
+      }
     }
   }
 
-  // Proxy configuration
+  // Handle proxy configuration
   if (axiosConfig.proxy) {
-    console.warn('Proxy configuration is not directly supported in undici. Consider using ProxyAgent from undici.');
+    // Create ProxyAgent
+    let proxyUrl = '';
+    if (typeof axiosConfig.proxy === 'object') {
+      const protocol = axiosConfig.proxy.protocol || 'http:';
+      proxyUrl = `${protocol}//${axiosConfig.proxy.host}:${axiosConfig.proxy.port}`;
+    }
+    
+    const proxyOptions: any = {
+      uri: proxyUrl,
+    };
+    
+    // Add authentication if provided
+    if (axiosConfig.proxy.auth) {
+      const proxyAuth = Buffer.from(
+        `${axiosConfig.proxy.auth.username}:${axiosConfig.proxy.auth.password}`
+      ).toString('base64');
+      proxyOptions.token = `Basic ${proxyAuth}`;
+    }
+    
+    // Store proxy configuration for later dispatcher creation
+    (undiciConfig as any).__proxyAgent = proxyOptions;
+  }
+
+  // Handle withCredentials - cookie support
+  if (axiosConfig.withCredentials) {
+    // Store flag for later cookie agent creation
+    (undiciConfig as any).__withCredentials = true;
   }
 
   // Decompress
@@ -88,8 +147,8 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
 
   // Socket path
   if (axiosConfig.socketPath) {
-    // Undici supports unix sockets differently
-    console.warn('socketPath requires special handling in undici. Use unix:// protocol in URL.');
+    // Store for URL transformation
+    (undiciConfig as any).__socketPath = axiosConfig.socketPath;
   }
 
   // Auth
@@ -100,12 +159,6 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
       ...undiciConfig.headers,
       'Authorization': `Basic ${basicAuth}`,
     };
-  }
-
-  // With credentials
-  if (axiosConfig.withCredentials) {
-    // Undici handles cookies differently
-    console.warn('withCredentials is not directly supported. Consider using cookie jar with undici.');
   }
 
   // Store axios-specific options for later processing
@@ -140,6 +193,11 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
     (undiciConfig as any).__axiosCompat = axiosSpecificOptions;
   }
 
+  // Add interceptors if any were created
+  if (interceptors.length > 0) {
+    undiciConfig.interceptors = interceptors;
+  }
+
   return undiciConfig;
 }
 
@@ -149,24 +207,11 @@ export function mapAxiosConfigToUndici(axiosConfig: AxiosConfigOptions): HttpMod
 export function getAxiosCompatibilityWarnings(axiosConfig: AxiosConfigOptions): string[] {
   const warnings: string[] = [];
 
-  if (axiosConfig.httpAgent || axiosConfig.httpsAgent) {
-    warnings.push('httpAgent/httpsAgent: Use undici Dispatcher options for connection pooling');
-  }
-
-  if (axiosConfig.proxy) {
-    warnings.push('proxy: Use ProxyAgent from undici for proxy support');
-  }
-
-  if (axiosConfig.maxBodyLength || axiosConfig.maxContentLength) {
-    warnings.push('maxBodyLength/maxContentLength: Not directly supported, consider using timeouts');
-  }
-
+  // These are now supported but with different implementation
+  // Keeping warnings for features that still need manual handling
+  
   if (axiosConfig.socketPath) {
-    warnings.push('socketPath: Use unix:// protocol in URL for unix sockets');
-  }
-
-  if (axiosConfig.withCredentials) {
-    warnings.push('withCredentials: Cookie handling requires additional configuration');
+    warnings.push('socketPath: Unix sockets require using unix:// protocol in URL');
   }
 
   if (axiosConfig.xsrfCookieName || axiosConfig.xsrfHeaderName) {

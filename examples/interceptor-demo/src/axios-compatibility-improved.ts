@@ -92,8 +92,8 @@ export class ApiService implements OnModuleInit {
 
 @Module({
   imports: [
-    // NEW: Use registerAxiosCompatible for maximum compatibility!
-    HttpModule.registerAxiosCompatible({
+    // NEW: Use register for maximum compatibility!
+    HttpModule.register({
       // Axios-style configuration
       timeout: 10000,
       maxRedirects: 5,
@@ -117,7 +117,7 @@ async function demonstrateImprovedCompatibility() {
   console.log('📋 Key improvements:');
   console.log('1. ✅ httpService.axiosRef.interceptors API - works like axios!');
   console.log('2. ✅ Axios-style error handling with response/request/config');
-  console.log('3. ✅ registerAxiosCompatible() with config mapping');
+  console.log('3. ✅ register() with config mapping');
   console.log('4. ✅ Support for validateStatus and other axios options');
   console.log('5. ✅ Warnings for unsupported features with migration hints\n');
 
@@ -135,7 +135,7 @@ async function demonstrateImprovedCompatibility() {
   console.log(`✅ Created user with ID: ${newUser.id}`);
 
   console.log('\n🎉 Migration from @nestjs/axios is now much easier!');
-  console.log('   Just change the import and use registerAxiosCompatible()');
+  console.log('   Just change the import and use register()');
 
   await app.close();
 }
@@ -158,7 +158,7 @@ console.log('AFTER (with nestjs-undici-interceptors):');
 console.log('```typescript');
 console.log("import { HttpModule, HttpService } from 'nestjs-undici-interceptors';");
 console.log('');
-console.log('HttpModule.registerAxiosCompatible({  // Just add "AxiosCompatible"!');
+console.log('HttpModule.register({  // Just add "AxiosCompatible"!');
 console.log('  timeout: 10000,');
 console.log('  maxRedirects: 5,');
 console.log('})');

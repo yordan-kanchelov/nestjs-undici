@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders } from 'http';
 import type { Dispatcher } from 'undici';
+import type { AxiosHeaders, AxiosRequestHeaders, RawAxiosHeaders } from './axios-headers.interface';
 
 /**
  * Axios-compatible response structure
@@ -20,7 +21,7 @@ export interface AxiosLikeResponse<T = any> {
 export interface AxiosLikeRequestConfig {
   url?: string;
   method?: string;
-  headers?: Record<string, string | string[]>;
+  headers?: AxiosRequestHeaders | AxiosHeaders;
   params?: any;
   data?: any;
   timeout?: number;

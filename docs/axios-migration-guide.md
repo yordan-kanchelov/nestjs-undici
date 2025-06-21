@@ -4,7 +4,7 @@ This guide helps you migrate from `@nestjs/axios` to `nestjs-undici-interceptors
 
 ## Quick Start
 
-The simplest migration path:
+The simplest migration path - just change your import:
 
 ```typescript
 // Before
@@ -24,13 +24,15 @@ import { HttpModule, HttpService } from 'nestjs-undici-interceptors';
 
 @Module({
   imports: [
-    HttpModule.registerAxiosCompatible({  // Just add "AxiosCompatible"
+    HttpModule.register({  // Same method, automatic detection!
       timeout: 5000,
-      maxRedirects: 5,
+      maxRedirects: 5,    // Automatically mapped to maxRedirections
     })
   ]
 })
 ```
+
+The `HttpModule.register()` method automatically detects axios-style configuration options and maps them to their undici equivalents. No need for special registration methods!
 
 ## New Axios Compatibility Features
 
@@ -74,17 +76,20 @@ export class MyService implements OnModuleInit {
 
 ### 2. Configuration Mapping
 
-The `registerAxiosCompatible()` method automatically maps axios options:
+The `register()` method automatically detects and maps axios options:
 
 | Axios Option | Undici Equivalent | Notes |
 |-------------|-------------------|-------|
-| `timeout` | `headersTimeout` & `bodyTimeout` | Automatically mapped |
-| `maxRedirects` | `maxRedirections` | Automatically mapped |
-| `validateStatus` | `validateStatus` | Supported |
-| `auth` | Authorization header | Converted to Basic auth |
-| `httpAgent` | - | Shows warning with guidance |
-| `httpsAgent` | - | Shows warning with guidance |
-| `proxy` | - | Shows warning with guidance |
+| `timeout` | `headersTimeout` & `bodyTimeout` | ✅ Automatically mapped |
+| `maxRedirects` | `maxRedirections` | ✅ Automatically mapped |
+| `validateStatus` | `validateStatus` | ✅ Supported |
+| `auth` | Authorization header | ✅ Converted to Basic auth |
+| `httpAgent` | Undici Agent | ✅ **NEW**: Automatically configured |
+| `httpsAgent` | Undici Agent | ✅ **NEW**: Automatically configured |
+| `proxy` | ProxyAgent | ✅ **NEW**: Automatically configured |
+| `maxBodyLength` | Size limit interceptor | ✅ **NEW**: Enforced via interceptor |
+| `maxContentLength` | Size limit interceptor | ✅ **NEW**: Enforced via interceptor |
+| `withCredentials` | CookieAgent | ✅ **NEW**: Cookie jar support |
 
 ### 3. Axios-Compatible Responses
 
@@ -117,6 +122,19 @@ try {
   }
 }
 ```
+
+## New Features in v0.4.2+
+
+### Enhanced Axios Compatibility
+
+The following axios options are now fully supported without any code changes:
+
+1. **Connection Pooling** - `httpAgent`/`httpsAgent` options are automatically mapped
+2. **Proxy Support** - `proxy` configuration creates ProxyAgent automatically
+3. **Size Limits** - `maxBodyLength`/`maxContentLength` enforced with axios-compatible errors
+4. **Cookie Management** - `withCredentials` enables automatic cookie handling
+
+See [Axios Supported Options](./axios-supported-options.md) for detailed documentation.
 
 ## Migration Patterns
 
@@ -214,7 +232,7 @@ HttpModule.register({
 
 **After (Undici):**
 ```typescript
-HttpModule.registerAxiosCompatible({
+HttpModule.register({
   timeout: 10000,
   maxRedirects: 5,
   httpAgent: new http.Agent({ keepAlive: true }), // Will show warning
@@ -291,7 +309,7 @@ import { HttpModule as UndiciModule } from 'nestjs-undici-interceptors';
 @Module({
   imports: [
     AxiosModule.register({ /* axios config */ }),
-    UndiciModule.registerAxiosCompatible({ /* undici config */ }),
+    UndiciModule.register({ /* undici config */ }),
   ]
 })
 ```
@@ -300,12 +318,19 @@ Then gradually migrate services one at a time.
 
 ## Summary
 
-The new axios compatibility features make migration straightforward:
+Migration from `@nestjs/axios` is straightforward:
 
 1. Change imports from `@nestjs/axios` to `nestjs-undici-interceptors`
-2. Use `HttpModule.registerAxiosCompatible()` for automatic config mapping
-3. Existing interceptor code works with `httpService.axiosRef.interceptors`
-4. Response structure and error handling remain the same
-5. Get 60-70% performance improvement with minimal changes
+2. That's it! Your existing configuration and code will work
+3. The `HttpModule.register()` method automatically detects and maps axios options
+4. Existing interceptor code works with `httpService.axiosRef.interceptors`
+5. Response structure and error handling remain the same
+6. Get 60-70% performance improvement with minimal changes
+
+The library automatically handles:
+- Configuration mapping (timeout, maxRedirects, agents, proxy, etc.)
+- Response transformation to axios-compatible format
+- Error structure compatibility
+- All convenience methods (get, post, put, delete, etc.)
 
 For the best performance, consider migrating to the native Undici API over time, but the axios-compatible API will continue to be supported.

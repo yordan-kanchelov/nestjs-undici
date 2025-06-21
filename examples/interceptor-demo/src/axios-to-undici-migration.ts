@@ -228,20 +228,20 @@ class ComplexMigrationExample {
 }
 
 // ============================================
-// SIMPLIFIED MIGRATION (NEW!)
+// SIMPLIFIED MIGRATION - RECOMMENDED APPROACH
 // ============================================
 
 /**
- * With enhanced axios compatibility, most axios configurations
- * now work directly without changes!
+ * The HttpModule.register() method automatically detects
+ * axios-style configuration and handles it appropriately!
  */
 @Module({
   imports: [
-    // This axios configuration now works with nestjs-undici-interceptors!
+    // Just use register() - it automatically handles axios config!
     UndiciHttpModule.register({
       baseURL: 'https://api.example.com',
       timeout: 5000,
-      maxRedirects: 5,
+      maxRedirects: 5,  // Automatically mapped to maxRedirections
       httpAgent: new http.Agent({ keepAlive: true }),
       httpsAgent: new https.Agent({ keepAlive: true }),
       auth: { username: 'user', password: 'pass' },
@@ -286,15 +286,16 @@ async function demonstrateMigration() {
   const simplifiedApp = await NestFactory.create(SimplifiedMigrationModule);
 
   console.log('✅ All modules created successfully');
-  console.log('\n📝 Migration options:');
-  console.log('\n🎯 Option 1: Simplified Migration (Recommended)');
-  console.log('   - Just change the import statement');
-  console.log('   - Most axios configurations work directly');
-  console.log('   - axiosRef.interceptors API is available');
-  console.log('\n⚙️  Option 2: Full Migration');
-  console.log('   - Convert to undici-style interceptors for more control');
-  console.log('   - Adjust configuration options as needed');
-  console.log('\n🔍 The library automatically detects axios-style options and handles them!');
+  console.log('\n📝 Migration is simple:');
+  console.log('\n🎯 Recommended Approach:');
+  console.log('   1. Change the import from @nestjs/axios to nestjs-undici-interceptors');
+  console.log('   2. That\'s it! Your existing configuration works automatically');
+  console.log('   3. The register() method detects and maps axios options');
+  console.log('   4. Both axios-style and undici-style interceptors are supported');
+  console.log('\n⚙️  Advanced Options:');
+  console.log('   - Use undici-style interceptors for more control and better performance');
+  console.log('   - Access to undici-specific features like HTTP/2 support');
+  console.log('\n🔍 No special registration methods needed - register() handles everything!');
 
   await axiosApp.close();
   await undiciApp.close();

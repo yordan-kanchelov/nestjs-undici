@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '../http.service';
 import { HttpModule } from '../../http.module';
+import { AxiosHeaders } from '../../interfaces/axios-headers.interface';
 import { firstValueFrom } from 'rxjs';
 import * as http from 'http';
 import { AddressInfo } from 'net';
@@ -61,8 +62,14 @@ describe('HttpService - Axios Compatibility', () => {
       // Add request interceptor
       const interceptorId = service.axiosRef.interceptors.request.use(
         config => {
-          config.headers = config.headers || {};
-          config.headers['X-Test-Header'] = 'test-value';
+          if (!config.headers) {
+            config.headers = new AxiosHeaders();
+          }
+          if (config.headers instanceof AxiosHeaders) {
+            config.headers.set('X-Test-Header', 'test-value');
+          } else {
+            config.headers['X-Test-Header'] = 'test-value';
+          }
           return config;
         },
       );
@@ -98,10 +105,12 @@ describe('HttpService - Axios Compatibility', () => {
         error => {
           errorHandled = true;
           // Return a modified config to continue
+          const headers = new AxiosHeaders();
+          headers.set('X-Error-Handled', 'true');
           return {
             url: `${serverUrl}/test`,
             method: 'GET',
-            headers: { 'X-Error-Handled': 'true' },
+            headers,
           };
         },
       );
@@ -155,14 +164,24 @@ describe('HttpService - Axios Compatibility', () => {
 
       service.axiosRef.interceptors.request.use(config => {
         order.push('request1');
-        config.headers = config.headers || {};
-        config.headers['X-First'] = 'first';
+        if (!config.headers) {
+          config.headers = new AxiosHeaders();
+        }
+        if (config.headers instanceof AxiosHeaders) {
+          config.headers.set('X-First', 'first');
+        } else {
+          config.headers['X-First'] = 'first';
+        }
         return config;
       });
 
       service.axiosRef.interceptors.request.use(config => {
         order.push('request2');
-        config.headers['X-Second'] = 'second';
+        if (config.headers instanceof AxiosHeaders) {
+          config.headers.set('X-Second', 'second');
+        } else {
+          config.headers['X-Second'] = 'second';
+        }
         return config;
       });
 
@@ -186,13 +205,13 @@ describe('HttpService - Axios Compatibility', () => {
     });
   });
 
-  describe('HttpModule.registerAxiosCompatible', () => {
-    it('should map axios configuration to undici', async () => {
+  describe('HttpModule.register with axios options', () => {
+    it('should automatically map axios configuration to undici', async () => {
       const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       module = await Test.createTestingModule({
         imports: [
-          HttpModule.registerAxiosCompatible({
+          HttpModule.register({
             timeout: 5000,
             maxRedirects: 10,
             validateStatus: status => status < 500,
@@ -213,20 +232,50 @@ describe('HttpService - Axios Compatibility', () => {
       // Check maxRedirects mapping
       expect(undiciRef.maxRedirections).toBe(10);
 
-      // Check warnings were shown
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '⚠️  Axios compatibility warnings:',
-      );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
+      // Check that warnings are NOT shown for now-supported options
+      expect(consoleWarnSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('httpAgent'),
       );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect(consoleWarnSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('proxy'),
+      );
+      expect(consoleWarnSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('maxBodyLength'),
+      );
+      expect(consoleWarnSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('withCredentials'),
       );
 
       consoleWarnSpy.mockRestore();
 
       // No server needed for this test
+      mockServer = null;
+    });
+
+    it('should show warnings for unsupported options', async () => {
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      module = await Test.createTestingModule({
+        imports: [
+          HttpModule.register({
+            socketPath: '/var/run/docker.sock',
+            xsrfCookieName: 'XSRF-TOKEN',
+          }),
+        ],
+      }).compile();
+
+      // Should show warnings for unsupported options
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '[nestjs-undici-interceptors] Axios compatibility warnings:',
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('socketPath'),
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('XSRF protection'),
+      );
+
+      consoleWarnSpy.mockRestore();
       mockServer = null;
     });
 
@@ -237,7 +286,7 @@ describe('HttpService - Axios Compatibility', () => {
       });
 
       module = await Test.createTestingModule({
-        imports: [HttpModule.registerAxiosCompatible()],
+        imports: [HttpModule.register()],
       }).compile();
 
       service = module.get<HttpService>(HttpService);
@@ -261,7 +310,7 @@ describe('HttpService - Axios Compatibility', () => {
       });
 
       module = await Test.createTestingModule({
-        imports: [HttpModule.registerAxiosCompatible()],
+        imports: [HttpModule.register()],
       }).compile();
 
       service = module.get<HttpService>(HttpService);

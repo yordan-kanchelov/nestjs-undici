@@ -1,5 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { request } from 'undici';
+import { request, ProxyAgent, Agent as UndiciAgent } from 'undici';
+import { CookieAgent } from 'http-cookie-agent/undici';
+import { CookieJar } from 'tough-cookie';
 
 import { Observable, defer, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
@@ -31,6 +33,8 @@ import { axiosResponseAdapter } from '../interceptors/axios-response-adapter.int
 export class HttpService {
   private interceptors: Array<HttpInterceptor | HttpInterceptorFunction> = [];
   private _axiosRef: AxiosRef;
+  private customDispatcher?: Dispatcher;
+  private cookieJar?: CookieJar;
 
   public constructor(
     @Inject(UNDICI_INSTANCE_TOKEN)
@@ -55,6 +59,52 @@ export class HttpService {
         response: createAxiosResponseInterceptorManager((interceptor) => this.addInterceptor(interceptor)),
       },
     };
+
+    // Setup custom dispatcher based on axios compatibility options
+    this.setupDispatcher();
+  }
+
+  private setupDispatcher(): void {
+    const options = this.moduleOptions as any;
+    if (!options) return;
+
+    let baseDispatcher: Dispatcher | undefined;
+
+    // Handle ProxyAgent first (highest priority)
+    if (options.__proxyAgent) {
+      baseDispatcher = new ProxyAgent(options.__proxyAgent);
+    }
+    // Handle custom agent options
+    else if (options.__agentOptions) {
+      baseDispatcher = new UndiciAgent({
+        connections: options.__agentOptions.connections,
+        pipelining: options.pipelining || 1,
+      });
+    }
+
+    // Handle cookie support - wrap existing dispatcher if present
+    if (options.__withCredentials) {
+      this.cookieJar = new CookieJar();
+      
+      // Create cookie agent, optionally wrapping the base dispatcher
+      const cookieAgentOptions: any = { 
+        cookies: { jar: this.cookieJar } 
+      };
+      
+      // If we have a base dispatcher (proxy or custom agent), wrap it
+      if (baseDispatcher) {
+        cookieAgentOptions.factory = () => baseDispatcher;
+      }
+      
+      this.customDispatcher = new CookieAgent(cookieAgentOptions);
+    } else if (baseDispatcher) {
+      this.customDispatcher = baseDispatcher;
+    }
+
+    if (this.customDispatcher) {
+      // Set as default dispatcher in instance options
+      this.instanceOptions.dispatcher = this.customDispatcher;
+    }
   }
 
   public setGlobalDispatcher(dispatcher: Dispatcher): void {
@@ -82,6 +132,15 @@ export class HttpService {
       mergedOptions.bodyTimeout = timeout;
     }
 
+    // Pass through size limit options from module config
+    const moduleOpts = this.moduleOptions as any;
+    if (moduleOpts?.maxBodyLength !== undefined) {
+      (mergedOptions as any).maxBodyLength = moduleOpts.maxBodyLength;
+    }
+    if (moduleOpts?.maxContentLength !== undefined) {
+      (mergedOptions as any).maxContentLength = moduleOpts.maxContentLength;
+    }
+
     // Handle axios-specific options from module configuration
     let finalUrl = url;
     const axiosCompat = (this.moduleOptions as any)?.__axiosCompat;
@@ -92,6 +151,14 @@ export class HttpService {
       if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
         finalUrl = new URL(urlString, axiosCompat.baseURL).toString();
       }
+    }
+
+    // Handle socket path
+    if (moduleOpts?.__socketPath) {
+      // Transform URL to use unix socket
+      const urlString = typeof finalUrl === 'string' ? finalUrl : finalUrl.toString();
+      const urlObj = new URL(urlString);
+      finalUrl = `unix:${moduleOpts.__socketPath}:${urlObj.pathname}${urlObj.search}`;
     }
 
     // Create the request object for interceptors
@@ -109,9 +176,15 @@ export class HttpService {
   ): Observable<Dispatcher.ResponseData> {
     return defer(() => {
       return new Observable<Dispatcher.ResponseData>(subscriber => {
+        // Ensure we use the configured dispatcher (for cookies, proxy, etc.)
+        const options = {
+          ...interceptorRequest.options,
+          dispatcher: this.customDispatcher || interceptorRequest.options.dispatcher || this.instanceOptions.dispatcher
+        };
+        
         const response = request(
           interceptorRequest.url,
-          interceptorRequest.options,
+          options,
         );
         response
           .then(res => {

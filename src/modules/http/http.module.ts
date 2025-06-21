@@ -24,7 +24,17 @@ const INTERCEPTOR_METADATA = 'HTTP_INTERCEPTORS_METADATA';
 const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
 
 @Module({
-  providers: [HttpService],
+  providers: [
+    HttpService,
+    {
+      provide: UNDICI_INSTANCE_TOKEN,
+      useValue: {}, // Default empty options
+    },
+    {
+      provide: HTTP_MODULE_OPTIONS,
+      useValue: {}, // Default empty module options
+    },
+  ],
   exports: [HttpService],
 })
 export class HttpModule {
@@ -41,7 +51,10 @@ export class HttpModule {
       config.transformResponse ||
       config.withCredentials ||
       config.xsrfCookieName ||
-      config.xsrfHeaderName
+      config.xsrfHeaderName ||
+      config.proxy ||
+      config.maxBodyLength !== undefined ||
+      config.maxContentLength !== undefined
     );
 
     let processedConfig = config;
@@ -105,7 +118,11 @@ export class HttpModule {
         ...mappedConfig,
         ...config,
         // Ensure interceptors are preserved and include transform interceptors
-        interceptors: [...additionalInterceptors, ...(config.interceptors || [])],
+        interceptors: [
+          ...(mappedConfig.interceptors || []), // Include interceptors from mapping (e.g., size limit)
+          ...additionalInterceptors, // Include transform interceptors
+          ...(config.interceptors || []) // Include user-provided interceptors
+        ],
       };
     }
     
@@ -150,7 +167,7 @@ export class HttpModule {
         },
         {
           provide: HTTP_MODULE_OPTIONS,
-          useValue: { ...config, interceptors: functionInterceptors },
+          useValue: { ...processedConfig, interceptors: functionInterceptors },
         },
         {
           provide: HTTP_MODULE_ID,
@@ -255,34 +272,4 @@ export class HttpModule {
     };
   }
 
-  /**
-   * Register module with axios compatibility mode
-   * This method provides maximum compatibility with @nestjs/axios
-   * 
-   * @param axiosConfig Axios-style configuration options
-   * @returns Dynamic module configured for axios compatibility
-   */
-  static registerAxiosCompatible(axiosConfig: any = {}): DynamicModule {
-    // Extract interceptors if provided in axios style
-    const axiosInterceptors = axiosConfig.interceptors || [];
-    delete axiosConfig.interceptors;
-
-    // Map axios config to undici config
-    const undiciConfig = mapAxiosConfigToUndici(axiosConfig);
-
-    // Show warnings for unsupported features
-    const warnings = getAxiosCompatibilityWarnings(axiosConfig);
-    if (warnings.length > 0) {
-      console.warn('⚠️  Axios compatibility warnings:');
-      warnings.forEach(warning => console.warn(`   - ${warning}`));
-    }
-
-    // Configure with mapped options and interceptors
-    const config: HttpModuleOptions = {
-      ...undiciConfig,
-      interceptors: axiosInterceptors,
-    };
-
-    return this.register(config);
-  }
 }
