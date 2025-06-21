@@ -25,10 +25,14 @@
     "preversion": "npm run lint",
     "version": "npm run format && git add -A src",
     "postversion": "git push && git push --tags",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand"
+    "test": "npm run test:unit && npm run test:e2e && npm run test:examples",
+    "test:unit": "jest",
+    "test:unit:watch": "jest --watch",
+    "test:unit:cov": "jest --coverage",
+    "test:unit:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "setup:examples": "node scripts/setup-examples.js",
+    "test:examples": "npm run setup:examples && node scripts/run-examples.js",
+    "test:examples:verbose": "npm run setup:examples && VERBOSE=true node scripts/run-examples.js"
   },
   "devDependencies": {
     "@commitlint/cli": "17.8.1",

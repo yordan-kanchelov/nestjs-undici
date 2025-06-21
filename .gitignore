@@ -21,6 +21,9 @@ lib
 # build artifacts
 *.tsbuildinfo
 examples/interceptor-demo/dist/
+examples/**/*.js
+examples/**/dist
+!scripts/*.js
 
 # enviroment
 .env
