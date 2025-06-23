@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules
 
 # IDE
 /.idea
@@ -17,6 +17,13 @@ npm-debug.log
 
 # lib
 lib
+
+# build artifacts
+*.tsbuildinfo
+examples/interceptor-demo/dist/
+examples/**/*.js
+examples/**/dist
+!scripts/*.js
 
 # enviroment
 .env

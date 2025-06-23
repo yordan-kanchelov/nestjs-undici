@@ -4,6 +4,10 @@
   "testEnvironment": "node",
   "testRegex": ".spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.ts$": "ts-jest"
+  },
+  "forceExit": true,
+  "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"],
+  "globalTeardown": "<rootDir>/jest.teardown.js",
+  "testTimeout": 10000
 }

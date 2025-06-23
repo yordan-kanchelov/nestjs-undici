@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { firstValueFrom } from 'rxjs';
 import { UNDICI_PACKAGE_JSON } from '../../../../shared/constants/URL';
 
 import { HttpService } from '../index';
@@ -33,51 +34,55 @@ describe('HttpService', () => {
     it('should return an Observable with a ResponseData with a statusCode', () => {
       expect(service.request(baseURL)).toBeTruthy();
     });
-    it('should return 200 status', () => {
+    it('should return 200 status', async () => {
       const result = service.request(baseURL, {
         method: 'GET',
       });
-      result.subscribe(response => {
-        expect(response?.statusCode).toBe(200);
-      });
+      const response = await firstValueFrom(result);
+      expect(response?.status).toBe(200);
     });
-    it('should return 404 status', () => {
+    it('should return 404 status', async () => {
       const result = service.request(baseURL + 1, {
         method: 'GET',
       });
-      result.subscribe(response => {
-        expect(response?.statusCode).toBe(404);
+      
+      await expect(firstValueFrom(result)).rejects.toMatchObject({
+        response: expect.objectContaining({
+          status: 404
+        }),
+        isAxiosError: true
       });
     });
-    it('should return a body', () => {
+    it('should return data property', async () => {
       const result = service.request(baseURL, {
         method: 'GET',
       });
-      result.subscribe(response => {
-        expect(response?.body).toBeTruthy();
-      });
+      const response = await firstValueFrom(result);
+      expect(response?.data).toBeTruthy(); // axios-style data property
     });
-    it('should return a body with a name', () => {
+    it('should return data with a name', async () => {
       const result = service.request(baseURL, {
         method: 'GET',
       });
-      result.subscribe(async response => {
-        const json = (await response?.body?.json()) as ExampleResponse;
-        expect(json?.name).toBe('undici');
-        expect(json?.version).toBeDefined();
-        expect(json?.version).toBeTruthy();
-      });
+      const response = await firstValueFrom(result);
+      // In axios-compatible mode, data is already parsed
+      const json = response?.data;
+      // Check if we got the package.json data
+      expect(json).toBeDefined();
+      const parsedJson = typeof json === 'string' ? JSON.parse(json) : json;
+      expect(parsedJson.name).toBe('undici');
     });
-    it('should return a body with a version', () => {
+    it('should return data with a version', async () => {
       const result = service.request(baseURL, {
         method: 'GET',
       });
-      result.subscribe(async response => {
-        const json = (await response?.body?.json()) as ExampleResponse;
-        expect(json?.version).toBeDefined();
-        expect(json?.version).toBeTruthy();
-        expect(json?.version).not.toBe('');
-      });
+      const response = await firstValueFrom(result);
+      // In axios-compatible mode, data is already parsed
+      const data = response?.data;
+      const json = typeof data === 'string' ? JSON.parse(data) : data;
+      expect(json?.version).toBeDefined();
+      expect(json?.version).toBeTruthy();
+      expect(json?.version).not.toBe('');
     });
     describe('request with a dispatcher', () => {
       it('should return an Observable', () => {

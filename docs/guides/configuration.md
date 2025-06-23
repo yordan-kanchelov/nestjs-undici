@@ -2,13 +2,15 @@
 
 The NestJS Undici module provides flexible configuration options to customize the HTTP client behavior according to your needs. This guide covers all available configuration options and how to use them effectively.
 
+> **Note**: As of v0.4.0+, the module always returns axios-compatible responses by default. No special configuration is needed for axios compatibility.
+
 ## Basic Configuration
 
 The most straightforward way to configure the module is using the `register` method:
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici';
+import { HttpModule } from 'nestjs-undici-interceptors';
 
 @Module({
   imports: [
@@ -83,6 +85,31 @@ HttpModule.register({
 });
 ```
 
+### Interceptors
+
+Configure HTTP interceptors for request/response modification:
+
+```typescript
+// Function-based interceptor
+const authInterceptor = (request, next) => {
+  request.headers['Authorization'] = 'Bearer ' + getToken();
+  return next.handle(request);
+};
+
+// Class-based interceptor
+@Injectable()
+export class LoggingInterceptor implements HttpInterceptor {
+  intercept(request, next) {
+    console.log('Request:', request.url);
+    return next.handle(request);
+  }
+}
+
+HttpModule.register({
+  interceptors: [authInterceptor, LoggingInterceptor],
+});
+```
+
 ## Async Configuration
 
 For more complex scenarios, you can use the `registerAsync` method to provide configuration dynamically:
@@ -90,7 +117,7 @@ For more complex scenarios, you can use the `registerAsync` method to provide co
 ```typescript
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { HttpModule } from 'nestjs-undici';
+import { HttpModule } from 'nestjs-undici-interceptors';
 
 @Module({
   imports: [
@@ -115,7 +142,7 @@ You can create multiple instances of the HTTP client with different configuratio
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HttpModule } from 'nestjs-undici';
+import { HttpModule } from 'nestjs-undici-interceptors';
 
 @Module({
   imports: [
@@ -136,7 +163,7 @@ Then inject the specific instance in your service:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { HttpService } from 'nestjs-undici';
+import { HttpService } from 'nestjs-undici-interceptors';
 
 @Injectable()
 export class AppService {
