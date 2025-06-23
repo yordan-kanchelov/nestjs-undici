@@ -78,6 +78,7 @@ export type AxiosRequestHeaders = Partial<RawAxiosHeaders & CommonRequestHeaders
 /**
  * AxiosHeaders class for advanced header manipulation
  * Provides methods similar to the Headers API but with axios compatibility
+ * Supports bracket notation for header access/assignment
  */
 export class AxiosHeaders {
   private headers: Map<string, AxiosHeaderValue>;
@@ -96,6 +97,97 @@ export class AxiosHeaders {
         });
       }
     }
+
+    // Return a Proxy to support bracket notation
+    return new Proxy(this, {
+      get(target, prop: string | symbol) {
+        // If it's a method or property of AxiosHeaders, return it
+        if (prop in target) {
+          const value = (target as any)[prop];
+          if (typeof value === 'function') {
+            return value.bind(target);
+          }
+          return value;
+        }
+        
+        // Otherwise, treat it as a header key
+        if (typeof prop === 'string') {
+          return target.get(prop);
+        }
+        
+        return undefined;
+      },
+      
+      set(target, prop: string | symbol, value: AxiosHeaderValue) {
+        // Don't allow setting methods or internal properties
+        if (prop in target) {
+          return false;
+        }
+        
+        // Set as header
+        if (typeof prop === 'string') {
+          target.set(prop, value);
+          return true;
+        }
+        
+        return false;
+      },
+      
+      has(target, prop: string | symbol) {
+        // Check if it's a property/method first
+        if (prop in target) {
+          return true;
+        }
+        
+        // Otherwise check headers
+        if (typeof prop === 'string') {
+          return target.has(prop);
+        }
+        
+        return false;
+      },
+      
+      deleteProperty(target, prop: string | symbol) {
+        // Don't allow deleting methods or internal properties
+        if (prop in target) {
+          return false;
+        }
+        
+        // Delete header
+        if (typeof prop === 'string') {
+          return target.delete(prop);
+        }
+        
+        return false;
+      },
+      
+      ownKeys(target) {
+        // Return both class properties and header keys
+        const classKeys = Object.getOwnPropertyNames(Object.getPrototypeOf(target))
+          .concat(Object.getOwnPropertyNames(target));
+        const headerKeys = Array.from(target.headers.keys());
+        return [...new Set([...classKeys, ...headerKeys])];
+      },
+      
+      getOwnPropertyDescriptor(target, prop: string | symbol) {
+        // For class properties/methods
+        if (prop in target) {
+          return Object.getOwnPropertyDescriptor(target, prop) ||
+                 Object.getOwnPropertyDescriptor(Object.getPrototypeOf(target), prop);
+        }
+        
+        // For headers
+        if (typeof prop === 'string' && target.has(prop)) {
+          return {
+            configurable: true,
+            enumerable: true,
+            value: target.get(prop)
+          };
+        }
+        
+        return undefined;
+      }
+    });
   }
 
   /**
@@ -158,6 +250,8 @@ export class AxiosHeaders {
 
   /**
    * Create AxiosHeaders from various input types
+   * @param thing - Input to convert to AxiosHeaders
+   * @returns AxiosHeaders instance with proxy support
    */
   static from(thing?: AxiosHeaders | RawAxiosHeaders | string): AxiosHeaders {
     if (thing instanceof AxiosHeaders) {
@@ -185,6 +279,8 @@ export class AxiosHeaders {
 
   /**
    * Concatenate headers
+   * @param sources - Headers to concatenate
+   * @returns New AxiosHeaders instance with all headers
    */
   static concat(...sources: Array<AxiosHeaders | RawAxiosHeaders | undefined>): AxiosHeaders {
     const result = new AxiosHeaders();

@@ -111,6 +111,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
       return response.data;
     } catch (error: any) {
       // Errors are also axios-compatible
+      console.log('Request error:', error);
       if (error.isAxiosError) {
         console.log('Axios error properties:');
         console.log('- message:', error.message);
@@ -118,7 +119,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
         console.log('- config:', error.config);
         console.log('- request:', error.request);
         console.log('- response:', error.response);
-        console.log('- toJSON:', error.toJSON());
+        console.log('- toJSON:', error.toJSON && error.toJSON());
       }
       throw error;
     }
@@ -257,7 +258,7 @@ export class AxiosCompatibilityService implements OnModuleInit {
   imports: [
     HttpModule.register({
       // All these axios options are automatically detected and mapped!
-      timeout: 5000,              // Mapped to headersTimeout & bodyTimeout
+      timeout: 30000,              // Mapped to headersTimeout & bodyTimeout (30 seconds)
       maxRedirects: 5,           // Mapped to maxRedirections
       validateStatus: (status) => status < 500,  // Works exactly like axios
 
@@ -322,8 +323,17 @@ export async function demonstrateFeatures() {
     await service.demonstrateHttpMethods();
 
     console.log('\n✅ All axios compatibility features demonstrated successfully!');
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error demonstrating features:', error);
+    console.error('Error details:', {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+      response: error.response,
+      request: error.request,
+      config: error.config,
+      isAxiosError: error.isAxiosError
+    });
     throw error;
   } finally {
     await app.close();
