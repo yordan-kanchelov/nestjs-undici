@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '../http.service';
 import { HttpModule } from '../../http.module';
-import { AxiosHeaders } from '../../interfaces/axios-headers.interface';
+import { AxiosHeaders } from '../../interfaces/axios-headers';
 import { firstValueFrom } from 'rxjs';
 import * as http from 'http';
 import { AddressInfo } from 'net';
@@ -316,7 +316,7 @@ describe('HttpService - Axios Compatibility', () => {
       service = module.get<HttpService>(HttpService);
 
       await expect(
-        firstValueFrom(service.get(`${serverUrl}/not-found`))
+        firstValueFrom(service.get(`${serverUrl}/not-found`)),
       ).rejects.toMatchObject({
         isAxiosError: true,
         response: expect.objectContaining({
@@ -328,9 +328,11 @@ describe('HttpService - Axios Compatibility', () => {
       });
 
       // Test the error toJSON method
-      const errorPromise = firstValueFrom(service.get(`${serverUrl}/not-found`));
+      const errorPromise = firstValueFrom(
+        service.get(`${serverUrl}/not-found`),
+      );
       await expect(errorPromise).rejects.toThrow();
-      
+
       const error = await errorPromise.catch(e => e);
       expect(error.toJSON).toBeDefined();
       expect(error.toJSON()).toMatchObject({

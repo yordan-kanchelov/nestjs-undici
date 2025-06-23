@@ -6,24 +6,30 @@
 /**
  * Valid axios header value types
  */
-export type AxiosHeaderValue = string | string[] | number | boolean | null | undefined;
+export type AxiosHeaderValue =
+  | string
+  | string[]
+  | number
+  | boolean
+  | null
+  | undefined;
 
 /**
  * Common HTTP request headers with proper typing
  */
 export interface CommonRequestHeaders {
-  'Accept'?: AxiosHeaderValue;
+  Accept?: AxiosHeaderValue;
   'Accept-Encoding'?: AxiosHeaderValue;
   'Accept-Language'?: AxiosHeaderValue;
-  'Authorization'?: AxiosHeaderValue;
+  Authorization?: AxiosHeaderValue;
   'Cache-Control'?: AxiosHeaderValue;
   'Content-Encoding'?: AxiosHeaderValue;
   'Content-Length'?: AxiosHeaderValue;
   'Content-Type'?: AxiosHeaderValue;
-  'Cookie'?: AxiosHeaderValue;
-  'Host'?: AxiosHeaderValue;
-  'Origin'?: AxiosHeaderValue;
-  'Referer'?: AxiosHeaderValue;
+  Cookie?: AxiosHeaderValue;
+  Host?: AxiosHeaderValue;
+  Origin?: AxiosHeaderValue;
+  Referer?: AxiosHeaderValue;
   'User-Agent'?: AxiosHeaderValue;
   'X-Requested-With'?: AxiosHeaderValue;
 }
@@ -36,14 +42,14 @@ export interface CommonResponseHeaders {
   'Content-Encoding'?: AxiosHeaderValue;
   'Content-Length'?: AxiosHeaderValue;
   'Content-Type'?: AxiosHeaderValue;
-  'Date'?: AxiosHeaderValue;
-  'Etag'?: AxiosHeaderValue;
-  'Expires'?: AxiosHeaderValue;
+  Date?: AxiosHeaderValue;
+  Etag?: AxiosHeaderValue;
+  Expires?: AxiosHeaderValue;
   'Last-Modified'?: AxiosHeaderValue;
-  'Location'?: AxiosHeaderValue;
-  'Server'?: AxiosHeaderValue;
+  Location?: AxiosHeaderValue;
+  Server?: AxiosHeaderValue;
   'Set-Cookie'?: AxiosHeaderValue;
-  'Vary'?: AxiosHeaderValue;
+  Vary?: AxiosHeaderValue;
 }
 
 /**
@@ -73,7 +79,9 @@ export interface MethodHeaders {
  * Combined axios request headers type
  * Supports common headers with proper typing and any custom headers
  */
-export type AxiosRequestHeaders = Partial<RawAxiosHeaders & CommonRequestHeaders>;
+export type AxiosRequestHeaders = Partial<
+  RawAxiosHeaders & CommonRequestHeaders
+>;
 
 /**
  * AxiosHeaders class for advanced header manipulation
@@ -85,7 +93,7 @@ export class AxiosHeaders {
 
   constructor(headers?: RawAxiosHeaders | AxiosHeaders) {
     this.headers = new Map();
-    
+
     if (headers) {
       if (headers instanceof AxiosHeaders) {
         headers.forEach((value, key) => {
@@ -109,84 +117,87 @@ export class AxiosHeaders {
           }
           return value;
         }
-        
+
         // Otherwise, treat it as a header key
         if (typeof prop === 'string') {
           return target.get(prop);
         }
-        
+
         return undefined;
       },
-      
+
       set(target, prop: string | symbol, value: AxiosHeaderValue) {
         // Don't allow setting methods or internal properties
         if (prop in target) {
           return false;
         }
-        
+
         // Set as header
         if (typeof prop === 'string') {
           target.set(prop, value);
           return true;
         }
-        
+
         return false;
       },
-      
+
       has(target, prop: string | symbol) {
         // Check if it's a property/method first
         if (prop in target) {
           return true;
         }
-        
+
         // Otherwise check headers
         if (typeof prop === 'string') {
           return target.has(prop);
         }
-        
+
         return false;
       },
-      
+
       deleteProperty(target, prop: string | symbol) {
         // Don't allow deleting methods or internal properties
         if (prop in target) {
           return false;
         }
-        
+
         // Delete header
         if (typeof prop === 'string') {
           return target.delete(prop);
         }
-        
+
         return false;
       },
-      
+
       ownKeys(target) {
         // Return both class properties and header keys
-        const classKeys = Object.getOwnPropertyNames(Object.getPrototypeOf(target))
-          .concat(Object.getOwnPropertyNames(target));
+        const classKeys = Object.getOwnPropertyNames(
+          Object.getPrototypeOf(target),
+        ).concat(Object.getOwnPropertyNames(target));
         const headerKeys = Array.from(target.headers.keys());
         return [...new Set([...classKeys, ...headerKeys])];
       },
-      
+
       getOwnPropertyDescriptor(target, prop: string | symbol) {
         // For class properties/methods
         if (prop in target) {
-          return Object.getOwnPropertyDescriptor(target, prop) ||
-                 Object.getOwnPropertyDescriptor(Object.getPrototypeOf(target), prop);
+          return (
+            Object.getOwnPropertyDescriptor(target, prop) ||
+            Object.getOwnPropertyDescriptor(Object.getPrototypeOf(target), prop)
+          );
         }
-        
+
         // For headers
         if (typeof prop === 'string' && target.has(prop)) {
           return {
             configurable: true,
             enumerable: true,
-            value: target.get(prop)
+            value: target.get(prop),
           };
         }
-        
+
         return undefined;
-      }
+      },
     });
   }
 
@@ -231,7 +242,13 @@ export class AxiosHeaders {
   /**
    * Iterate over headers
    */
-  forEach(callback: (value: AxiosHeaderValue, key: string, headers: AxiosHeaders) => void): void {
+  forEach(
+    callback: (
+      value: AxiosHeaderValue,
+      key: string,
+      headers: AxiosHeaders,
+    ) => void,
+  ): void {
     this.headers.forEach((value, key) => {
       callback(value, key, this);
     });
@@ -257,9 +274,9 @@ export class AxiosHeaders {
     if (thing instanceof AxiosHeaders) {
       return thing;
     }
-    
+
     const headers = new AxiosHeaders();
-    
+
     if (typeof thing === 'string') {
       // Parse raw headers string (e.g., from HTTP response)
       thing.split('\n').forEach(line => {
@@ -273,7 +290,7 @@ export class AxiosHeaders {
         headers.set(key, value);
       });
     }
-    
+
     return headers;
   }
 
@@ -282,9 +299,11 @@ export class AxiosHeaders {
    * @param sources - Headers to concatenate
    * @returns New AxiosHeaders instance with all headers
    */
-  static concat(...sources: Array<AxiosHeaders | RawAxiosHeaders | undefined>): AxiosHeaders {
+  static concat(
+    ...sources: Array<AxiosHeaders | RawAxiosHeaders | undefined>
+  ): AxiosHeaders {
     const result = new AxiosHeaders();
-    
+
     sources.forEach(source => {
       if (source) {
         const headers = AxiosHeaders.from(source);
@@ -293,7 +312,7 @@ export class AxiosHeaders {
         });
       }
     });
-    
+
     return result;
   }
 

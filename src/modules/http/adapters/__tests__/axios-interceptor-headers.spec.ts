@@ -1,6 +1,6 @@
 import { createAxiosRequestInterceptorManager } from '../axios-interceptor.adapter';
 import { HttpInterceptorFunction } from '../../interfaces/http-interceptor.interface';
-import { AxiosHeaders } from '../../interfaces/axios-headers.interface';
+import { AxiosHeaders } from '../../interfaces/axios-headers';
 import { firstValueFrom } from 'rxjs';
 import { of } from 'rxjs';
 
@@ -16,24 +16,25 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
 
   it('should handle plain object headers', async () => {
     const manager = createAxiosRequestInterceptorManager(addInterceptor);
-    
-    manager.use((config) => {
+
+    manager.use(config => {
       // The config here is an AxiosLikeRequestConfig with AxiosHeaders
       if (!config.headers) {
         config.headers = new AxiosHeaders();
       }
-      
+
       // Add custom header
       if (config.headers instanceof AxiosHeaders) {
         config.headers.set('X-Custom-Header', 'test-value');
       } else {
-        (config.headers as Record<string, string>)['X-Custom-Header'] = 'test-value';
+        (config.headers as Record<string, string>)['X-Custom-Header'] =
+          'test-value';
       }
       return config;
     });
 
     const mockNext = {
-      handle: jest.fn().mockReturnValue(of({ data: 'success' }))
+      handle: jest.fn().mockReturnValue(of({ data: 'success' })),
     };
 
     const request = {
@@ -41,9 +42,9 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
       options: {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+          'Content-Type': 'application/json',
+        },
+      },
     };
 
     const interceptor = interceptors[0];
@@ -59,26 +60,29 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
 
   it('should handle Headers API-like object with set method', async () => {
     const manager = createAxiosRequestInterceptorManager(addInterceptor);
-    
-    manager.use((config) => {
+
+    manager.use(config => {
       // Initialize headers if not present
       if (!config.headers) {
         config.headers = {};
       }
-      
+
       // If headers has a set method (like Headers API), use it
-      if ((config.headers as any).set && typeof (config.headers as any).set === 'function') {
+      if (
+        (config.headers as any).set &&
+        typeof (config.headers as any).set === 'function'
+      ) {
         (config.headers as any).set('X-Custom-Header', 'test-value');
       } else {
         // Otherwise treat as plain object
         config.headers['X-Custom-Header'] = 'test-value';
       }
-      
+
       return config;
     });
 
     const mockNext = {
-      handle: jest.fn().mockReturnValue(of({ data: 'success' }))
+      handle: jest.fn().mockReturnValue(of({ data: 'success' })),
     };
 
     const request = {
@@ -86,9 +90,9 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
       options: {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+          'Content-Type': 'application/json',
+        },
+      },
     };
 
     const interceptor = interceptors[0];
@@ -99,21 +103,21 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
         options: expect.objectContaining({
           headers: expect.objectContaining({
             'content-type': 'application/json',
-            'x-custom-header': 'test-value'
-          })
-        })
-      })
+            'x-custom-header': 'test-value',
+          }),
+        }),
+      }),
     );
   });
 
   it('should handle OpenTelemetry-style header injection', async () => {
     const manager = createAxiosRequestInterceptorManager(addInterceptor);
-    
-    manager.use((config) => {
+
+    manager.use(config => {
       // Simulate OpenTelemetry propagation.inject pattern
       const headers: Record<string, string> = {
-        'traceparent': '00-123456789abcdef-fedcba987654321-01',
-        'tracestate': 'vendor=value'
+        traceparent: '00-123456789abcdef-fedcba987654321-01',
+        tracestate: 'vendor=value',
       };
 
       Object.entries(headers).forEach(([key, value]) => {
@@ -130,7 +134,7 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
     });
 
     const mockNext = {
-      handle: jest.fn().mockReturnValue(of({ data: 'success' }))
+      handle: jest.fn().mockReturnValue(of({ data: 'success' })),
     };
 
     const request = {
@@ -138,9 +142,9 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
       options: {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+          'Content-Type': 'application/json',
+        },
+      },
     };
 
     const interceptor = interceptors[0];
@@ -151,11 +155,11 @@ describe('Axios Interceptor Adapter - Headers Handling', () => {
         options: expect.objectContaining({
           headers: expect.objectContaining({
             'content-type': 'application/json',
-            'traceparent': '00-123456789abcdef-fedcba987654321-01',
-            'tracestate': 'vendor=value'
-          })
-        })
-      })
+            traceparent: '00-123456789abcdef-fedcba987654321-01',
+            tracestate: 'vendor=value',
+          }),
+        }),
+      }),
     );
   });
 });

@@ -8,11 +8,11 @@ import * as https from 'https';
 // Mock OpenTelemetry APIs
 jest.mock('@opentelemetry/api', () => ({
   context: {
-    active: jest.fn()
+    active: jest.fn(),
   },
   propagation: {
-    inject: jest.fn()
-  }
+    inject: jest.fn(),
+  },
 }));
 
 export type HttpConfig = {
@@ -330,7 +330,7 @@ describe('Axios-style OpenTelemetry Integration (Real Example)', () => {
 
     it('should handle AxiosHeaders instance in config', done => {
       // Import AxiosHeaders from the source
-      import('../src/modules/http/interfaces/axios-headers.interface')
+      import('../src/modules/http/interfaces/axios-headers')
         .then(({ AxiosHeaders }) => {
           // Create AxiosHeaders instance
           const headers = new AxiosHeaders();

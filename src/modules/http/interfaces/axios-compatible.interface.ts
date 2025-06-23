@@ -1,6 +1,10 @@
 import type { IncomingHttpHeaders } from 'http';
 import type { Dispatcher } from 'undici';
-import type { AxiosHeaders, AxiosRequestHeaders, RawAxiosHeaders } from './axios-headers.interface';
+import type {
+  AxiosHeaders,
+  AxiosRequestHeaders,
+  RawAxiosHeaders,
+} from './axios-headers';
 
 /**
  * Axios-compatible response structure
@@ -41,9 +45,10 @@ export interface UndiciResponseWithParsedBody extends Dispatcher.ResponseData {
  * Axios-compatible request options that can be used with HttpService methods
  * This extends Undici's RequestOptions with axios-specific options like timeout
  */
-export interface AxiosCompatibleRequestOptions extends Omit<
-  Dispatcher.RequestOptions,
-  'origin' | 'path' | 'method' | 'body'
-> {
+export interface AxiosCompatibleRequestOptions
+  extends Omit<
+    Dispatcher.RequestOptions,
+    'origin' | 'path' | 'method' | 'body'
+  > {
   timeout?: number;
 }

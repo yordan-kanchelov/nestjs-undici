@@ -5,9 +5,12 @@ import type {
   HttpInterceptorHandler,
   HttpInterceptorRequest,
 } from '../interfaces/http-interceptor.interface';
-import type { AxiosLikeRequestConfig, AxiosLikeResponse } from '../interfaces/axios-compatible.interface';
+import type {
+  AxiosLikeRequestConfig,
+  AxiosLikeResponse,
+} from '../interfaces/axios-compatible.interface';
 import type { AxiosInterceptorManager } from '../interfaces/axios-ref.interface';
-import { AxiosHeaders } from '../interfaces/axios-headers.interface';
+import { AxiosHeaders } from '../interfaces/axios-headers';
 
 /**
  * Stored interceptor with metadata
@@ -21,9 +24,11 @@ interface StoredInterceptor<T> {
 /**
  * Converts axios request config to undici interceptor request
  */
-function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpInterceptorRequest {
+function axiosConfigToInterceptorRequest(
+  config: AxiosLikeRequestConfig,
+): HttpInterceptorRequest {
   const { url, method, headers, data, timeout, ...restConfig } = config;
-  
+
   // Normalize headers to plain object
   const normalizedHeaders: Record<string, string | string[]> = {};
   if (headers) {
@@ -34,7 +39,10 @@ function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpIn
           normalizedHeaders[key] = String(value);
         }
       });
-    } else if (typeof (headers as any).set === 'function' && typeof (headers as any).entries === 'function') {
+    } else if (
+      typeof (headers as any).set === 'function' &&
+      typeof (headers as any).entries === 'function'
+    ) {
       // Headers API object
       for (const [key, value] of (headers as any).entries()) {
         normalizedHeaders[key] = value;
@@ -48,7 +56,7 @@ function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpIn
       });
     }
   }
-  
+
   const options: any = {
     method: method || 'GET',
     headers: normalizedHeaders,
@@ -60,7 +68,10 @@ function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpIn
       options.body = data;
     } else {
       options.body = JSON.stringify(data);
-      if (!options.headers['content-type'] && !options.headers['Content-Type']) {
+      if (
+        !options.headers['content-type'] &&
+        !options.headers['Content-Type']
+      ) {
         options.headers['content-type'] = 'application/json';
       }
     }
@@ -86,9 +97,11 @@ function axiosConfigToInterceptorRequest(config: AxiosLikeRequestConfig): HttpIn
 /**
  * Converts interceptor request back to axios config
  */
-function interceptorRequestToAxiosConfig(request: HttpInterceptorRequest): AxiosLikeRequestConfig {
+function interceptorRequestToAxiosConfig(
+  request: HttpInterceptorRequest,
+): AxiosLikeRequestConfig {
   const { url, options } = request;
-  
+
   // Convert headers to AxiosHeaders for better compatibility
   const axiosHeaders = new AxiosHeaders();
   if (options.headers && typeof options.headers === 'object') {
@@ -96,7 +109,7 @@ function interceptorRequestToAxiosConfig(request: HttpInterceptorRequest): Axios
       axiosHeaders.set(key, value as string | string[]);
     });
   }
-  
+
   return {
     url: typeof url === 'string' ? url : url.toString(),
     method: options.method,
@@ -111,15 +124,20 @@ function interceptorRequestToAxiosConfig(request: HttpInterceptorRequest): Axios
  * Creates an axios-style request interceptor manager
  */
 export function createAxiosRequestInterceptorManager(
-  addInterceptor: (interceptor: HttpInterceptorFunction) => void
+  addInterceptor: (interceptor: HttpInterceptorFunction) => void,
 ): AxiosInterceptorManager<AxiosLikeRequestConfig> {
-  const interceptors: Map<number, StoredInterceptor<AxiosLikeRequestConfig>> = new Map();
+  const interceptors: Map<
+    number,
+    StoredInterceptor<AxiosLikeRequestConfig>
+  > = new Map();
   let nextId = 0;
 
   return {
     use(
-      onFulfilled?: (value: AxiosLikeRequestConfig) => AxiosLikeRequestConfig | Promise<AxiosLikeRequestConfig>,
-      onRejected?: (error: any) => any
+      onFulfilled?: (
+        value: AxiosLikeRequestConfig,
+      ) => AxiosLikeRequestConfig | Promise<AxiosLikeRequestConfig>,
+      onRejected?: (error: any) => any,
     ): number {
       const id = nextId++;
       const interceptor: StoredInterceptor<AxiosLikeRequestConfig> = {
@@ -137,19 +155,20 @@ export function createAxiosRequestInterceptorManager(
         // Apply axios interceptor
         const applyInterceptor = from(
           Promise.resolve(axiosConfig)
-            .then(config => onFulfilled ? onFulfilled(config) : config)
+            .then(config => (onFulfilled ? onFulfilled(config) : config))
             .catch(error => {
               if (onRejected) {
                 return onRejected(error);
               }
               throw error;
-            })
+            }),
         );
 
         return applyInterceptor.pipe(
           mergeMap(modifiedConfig => {
             // Convert back to interceptor request
-            const modifiedRequest = axiosConfigToInterceptorRequest(modifiedConfig);
+            const modifiedRequest =
+              axiosConfigToInterceptorRequest(modifiedConfig);
             return next.handle(modifiedRequest);
           }),
           catchError(error => {
@@ -157,7 +176,7 @@ export function createAxiosRequestInterceptorManager(
               return from(Promise.resolve(onRejected(error)));
             }
             return throwError(() => error);
-          })
+          }),
         );
       };
 
@@ -169,13 +188,17 @@ export function createAxiosRequestInterceptorManager(
       // Note: Current implementation doesn't support removing individual interceptors
       // This would require tracking interceptors in HttpService
       interceptors.delete(id);
-      console.warn('Interceptor ejection is not fully supported yet. Interceptor marked for removal but may still be active.');
+      console.warn(
+        'Interceptor ejection is not fully supported yet. Interceptor marked for removal but may still be active.',
+      );
     },
 
     clear(): void {
       interceptors.clear();
-      console.warn('Interceptor clearing is not fully supported yet. Interceptors marked for removal but may still be active.');
-    }
+      console.warn(
+        'Interceptor clearing is not fully supported yet. Interceptors marked for removal but may still be active.',
+      );
+    },
   };
 }
 
@@ -183,15 +206,20 @@ export function createAxiosRequestInterceptorManager(
  * Creates an axios-style response interceptor manager
  */
 export function createAxiosResponseInterceptorManager(
-  addInterceptor: (interceptor: HttpInterceptorFunction) => void
+  addInterceptor: (interceptor: HttpInterceptorFunction) => void,
 ): AxiosInterceptorManager<AxiosLikeResponse> {
-  const interceptors: Map<number, StoredInterceptor<AxiosLikeResponse>> = new Map();
+  const interceptors: Map<
+    number,
+    StoredInterceptor<AxiosLikeResponse>
+  > = new Map();
   let nextId = 0;
 
   return {
     use(
-      onFulfilled?: (value: AxiosLikeResponse) => AxiosLikeResponse | Promise<AxiosLikeResponse>,
-      onRejected?: (error: any) => any
+      onFulfilled?: (
+        value: AxiosLikeResponse,
+      ) => AxiosLikeResponse | Promise<AxiosLikeResponse>,
+      onRejected?: (error: any) => any,
     ): number {
       const id = nextId++;
       const interceptor: StoredInterceptor<AxiosLikeResponse> = {
@@ -205,9 +233,16 @@ export function createAxiosResponseInterceptorManager(
       const undiciInterceptor: HttpInterceptorFunction = (request, next) => {
         return next.handle(request).pipe(
           mergeMap(response => {
-            if (onFulfilled && response && typeof response === 'object' && 'data' in response) {
+            if (
+              onFulfilled &&
+              response &&
+              typeof response === 'object' &&
+              'data' in response
+            ) {
               // It's already an axios-like response
-              return from(Promise.resolve(onFulfilled(response as AxiosLikeResponse)));
+              return from(
+                Promise.resolve(onFulfilled(response as AxiosLikeResponse)),
+              );
             }
             return of(response);
           }),
@@ -232,7 +267,7 @@ export function createAxiosResponseInterceptorManager(
               return from(Promise.resolve(onRejected(axiosError)));
             }
             return throwError(() => error);
-          })
+          }),
         );
       };
 
@@ -242,12 +277,16 @@ export function createAxiosResponseInterceptorManager(
 
     eject(id: number): void {
       interceptors.delete(id);
-      console.warn('Interceptor ejection is not fully supported yet. Interceptor marked for removal but may still be active.');
+      console.warn(
+        'Interceptor ejection is not fully supported yet. Interceptor marked for removal but may still be active.',
+      );
     },
 
     clear(): void {
       interceptors.clear();
-      console.warn('Interceptor clearing is not fully supported yet. Interceptors marked for removal but may still be active.');
-    }
+      console.warn(
+        'Interceptor clearing is not fully supported yet. Interceptors marked for removal but may still be active.',
+      );
+    },
   };
 }
