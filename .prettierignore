@@ -4,3 +4,4 @@ benchmarks/
 package-lock.json
 docs/
 *.md
+plan/

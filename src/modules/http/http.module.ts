@@ -1,7 +1,5 @@
-import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
+import { DynamicModule, Logger, Module, Provider, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { randomUUID } from 'node:crypto';
-import { map } from 'rxjs/operators';
 
 import { HttpService } from './services/http.service';
 import {
@@ -11,7 +9,6 @@ import {
 
 import {
   UNDICI_INSTANCE_TOKEN,
-  HTTP_MODULE_ID,
   HTTP_MODULE_OPTIONS,
 } from './constants/http.constants';
 
@@ -21,7 +18,11 @@ import type {
   HttpInterceptor,
   HttpInterceptorFunction,
 } from './interfaces';
-import type { HttpModuleOptions, UndiciRequestOptionsType } from './types';
+import type { HttpModuleOptions } from './types';
+import type {
+  ResolvedHttpModuleOptions,
+  ResolvedUndiciRequestOptions,
+} from './internal/resolved-config';
 
 const INTERCEPTOR_METADATA = 'HTTP_INTERCEPTORS_METADATA';
 const HTTP_SERVICE_INTERCEPTORS = 'HTTP_SERVICE_INTERCEPTORS';
@@ -58,18 +59,34 @@ function isInterceptorInstance(
     HttpService,
     {
       provide: UNDICI_INSTANCE_TOKEN,
-      useValue: {}, // Default empty options
+      // A factory, not `useValue: {}` (**breaking**: fixes a real bug, not
+      // just a style choice - plan.md phase 3 "Resource cleanup": "The
+      // static module's default options become a factory"). `@Module()`'s
+      // provider metadata is evaluated once, when this class is declared,
+      // so a literal `{}` here would be the exact same object reference
+      // handed to every app that imports the static `HttpModule` (as
+      // opposed to `HttpModule.register({})`, which builds a fresh object
+      // per call): `HttpService#setDispatcher()` mutating `instanceOptions`
+      // in one app would then leak into every other app's `HttpService`
+      // that also imported the bare `HttpModule` -
+      // `plan/reports/package-quality.md`'s "A static `HttpModule` import
+      // shares one `{}` options object across apps". A factory runs once
+      // per module instantiation instead, so each app's `HttpService` gets
+      // its own options object.
+      useFactory: () => ({}),
     },
     {
       provide: HTTP_MODULE_OPTIONS,
-      useValue: {}, // Default empty module options
+      useFactory: () => ({}), // Default empty module options, per-instantiation (see above)
     },
   ],
   exports: [HttpService],
 })
 export class HttpModule {
-  static register(config: HttpModuleOptions & any = {}): DynamicModule {
-    const processedConfig = HttpModule.processAxiosConfig(config);
+  private static readonly logger = new Logger(HttpModule.name);
+  static register(config: HttpModuleOptions = {}): DynamicModule {
+    const processedConfig: ResolvedHttpModuleOptions =
+      HttpModule.processAxiosConfig(config);
 
     // Extract interceptors - axios response adapter will be added in the service
     const interceptors = processedConfig.interceptors || [];
@@ -113,10 +130,6 @@ export class HttpModule {
           provide: HTTP_MODULE_OPTIONS,
           useValue: { ...processedConfig, interceptors: functionInterceptors },
         },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomUUID(),
-        },
         ...interceptorProviders,
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
@@ -134,14 +147,10 @@ export class HttpModule {
         {
           provide: HttpService,
           useFactory: (
-            options: UndiciRequestOptionsType,
-            moduleOptions: HttpModuleOptions,
+            options: ResolvedUndiciRequestOptions,
+            moduleOptions: ResolvedHttpModuleOptions,
             interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
-          ) => {
-            const service = new HttpService(options, moduleOptions);
-            service.setInterceptors(interceptors);
-            return service;
-          },
+          ) => new HttpService(options, moduleOptions, interceptors),
           inject: [
             UNDICI_INSTANCE_TOKEN,
             HTTP_MODULE_OPTIONS,
@@ -158,8 +167,8 @@ export class HttpModule {
    * them to undici options plus interceptors (transforms, size limits, ...).
    */
   private static processAxiosConfig(
-    config: HttpModuleOptions & any = {},
-  ): HttpModuleOptions & any {
+    config: HttpModuleOptions = {},
+  ): ResolvedHttpModuleOptions {
     // Check if this looks like axios configuration
     const hasAxiosOptions = !!(
       config.httpAgent ||
@@ -173,9 +182,12 @@ export class HttpModule {
       config.withCredentials ||
       config.xsrfCookieName ||
       config.xsrfHeaderName ||
-      config.proxy ||
+      config.proxy !== undefined ||
       config.maxBodyLength !== undefined ||
-      config.maxContentLength !== undefined
+      config.maxContentLength !== undefined ||
+      config.socketPath ||
+      config.httpVersion !== undefined ||
+      config.http2Options
     );
 
     let processedConfig = config;
@@ -184,75 +196,25 @@ export class HttpModule {
     if (hasAxiosOptions) {
       const warnings = getAxiosCompatibilityWarnings(config);
       if (warnings.length > 0) {
-        console.warn('[nestjs-axios-undici] Axios compatibility warnings:');
-        warnings.forEach(warning => console.warn(`  - ${warning}`));
+        HttpModule.logger.warn('Axios compatibility warnings:');
+        warnings.forEach(warning => HttpModule.logger.warn(`  - ${warning}`));
       }
 
       // Map axios config to undici config
       const mappedConfig = mapAxiosConfigToUndici(config);
 
-      // Convert axios transformRequest/transformResponse to interceptors
-      const additionalInterceptors: HttpInterceptorFunction[] = [];
-
-      if (config.transformRequest) {
-        const transforms = Array.isArray(config.transformRequest)
-          ? config.transformRequest
-          : [config.transformRequest];
-        transforms.forEach(transform => {
-          additionalInterceptors.push((request, next) => {
-            // Apply transform to request data
-            if (request.options.body) {
-              const transformedData = transform(
-                request.options.body,
-                request.options.headers,
-              );
-              return next.handle({
-                ...request,
-                options: {
-                  ...request.options,
-                  body: transformedData,
-                },
-              });
-            }
-            return next.handle(request);
-          });
-        });
-      }
-
-      if (config.transformResponse) {
-        const transforms = Array.isArray(config.transformResponse)
-          ? config.transformResponse
-          : [config.transformResponse];
-        transforms.forEach(transform => {
-          additionalInterceptors.push((request, next) => {
-            return next.handle(request).pipe(
-              map(response => {
-                if (
-                  response &&
-                  typeof response === 'object' &&
-                  'data' in response
-                ) {
-                  const transformedData = transform(response.data);
-                  return {
-                    ...response,
-                    data: transformedData,
-                  };
-                }
-                return response;
-              }),
-            );
-          });
-        });
-      }
-
-      // Merge with original config, preserving any undici-specific options
+      // Merge with original config, preserving any undici-specific options.
+      // `transformRequest`/`transformResponse` stay as plain config (from
+      // `...config`) - HttpService's axiosRef pipeline (`buildAxiosConfig`/
+      // `serializeAxiosConfig`) runs them directly against the raw request
+      // data/response body, rather than through an interceptor that only
+      // ever saw the already-serialised/-parsed undici body.
       processedConfig = {
         ...mappedConfig,
         ...config,
-        // Ensure interceptors are preserved and include transform interceptors
+        // Ensure interceptors are preserved
         interceptors: [
           ...(mappedConfig.interceptors || []), // Include interceptors from mapping (e.g., size limit)
-          ...additionalInterceptors, // Include transform interceptors
           ...(config.interceptors || []), // Include user-provided interceptors
         ],
       };
@@ -270,15 +232,11 @@ export class HttpModule {
         ...this.createAsyncProviders(options),
         {
           provide: UNDICI_INSTANCE_TOKEN,
-          useFactory: (config: HttpModuleOptions) => {
+          useFactory: (config: ResolvedHttpModuleOptions) => {
             const { interceptors, global: _global, ...undiciOptions } = config;
             return undiciOptions;
           },
           inject: [HTTP_MODULE_OPTIONS],
-        },
-        {
-          provide: HTTP_MODULE_ID,
-          useValue: randomUUID(),
         },
         {
           provide: HTTP_SERVICE_INTERCEPTORS,
@@ -303,14 +261,10 @@ export class HttpModule {
         {
           provide: HttpService,
           useFactory: (
-            options: UndiciRequestOptionsType,
-            moduleOptions: HttpModuleOptions,
+            options: ResolvedUndiciRequestOptions,
+            moduleOptions: ResolvedHttpModuleOptions,
             interceptors: Array<HttpInterceptor | HttpInterceptorFunction>,
-          ) => {
-            const service = new HttpService(options, moduleOptions);
-            service.setInterceptors(interceptors);
-            return service;
-          },
+          ) => new HttpService(options, moduleOptions, interceptors),
           inject: [
             UNDICI_INSTANCE_TOKEN,
             HTTP_MODULE_OPTIONS,
@@ -329,11 +283,18 @@ export class HttpModule {
     if (options.useExisting || options.useFactory) {
       return [this.createAsyncOptionsProvider(options)];
     }
+    // `createAsyncOptionsProvider` below throws when none of
+    // useFactory/useClass/useExisting is set; this check just narrows
+    // `useClass` for the compiler, since it runs first either way.
+    const useClass = options.useClass;
+    if (!useClass) {
+      return [this.createAsyncOptionsProvider(options)];
+    }
     return [
       this.createAsyncOptionsProvider(options),
       {
-        provide: options.useClass,
-        useClass: options.useClass,
+        provide: useClass,
+        useClass,
       },
     ];
   }
@@ -350,11 +311,21 @@ export class HttpModule {
         inject: options.inject || [],
       };
     }
+    const factoryClass = options.useExisting || options.useClass;
+    if (!factoryClass) {
+      // Without this, Nest would silently register a provider with
+      // `provide: undefined` (the `inject: [undefined]` below) instead of
+      // failing clearly - one of the 7 `strict`-mode errors in
+      // `plan/reports/package-quality.md`.
+      throw new Error(
+        'HttpModule.registerAsync() requires one of useFactory, useClass or useExisting',
+      );
+    }
     return {
       provide: HTTP_MODULE_OPTIONS,
       useFactory: async (optionsFactory: HttpModuleOptionsFactory) =>
         HttpModule.processAxiosConfig(await optionsFactory.createHttpOptions()),
-      inject: [options.useExisting || options.useClass],
+      inject: [factoryClass],
     };
   }
 }

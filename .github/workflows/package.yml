@@ -1,0 +1,132 @@
+name: Package
+
+# Tests the package the way a consumer gets it: packs it, lints the tarball, then
+# installs it into fresh projects for every supported Node/NestJS/undici combination.
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - 'scripts/consumer/**'
+      - '.github/workflows/package.yml'
+  workflow_dispatch:
+  schedule:
+    # Weekly, to catch new NestJS/undici/rxjs releases inside the peer ranges
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and pack
+        id: pack
+        run: |
+          mkdir -p dist
+          npm pack --pack-destination dist
+          echo "tarball=$(ls dist/*.tgz)" >> "$GITHUB_OUTPUT"
+
+      - name: Every import is a dependency or peer
+        run: node scripts/consumer/check-declared-deps.cjs "${{ steps.pack.outputs.tarball }}"
+
+      - name: publint
+        run: npx --yes publint@0.3.24 "${{ steps.pack.outputs.tarball }}" --strict
+
+      - name: Are the types wrong
+        run: npx --yes @arethetypeswrong/cli@0.18.5 "${{ steps.pack.outputs.tarball }}"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: dist/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  consumer:
+    name: Consumer (Node ${{ matrix.node }})
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.17.0 is the lowest supported Node (engines), 22.19.0 the lowest undici 8
+        # supports. Combinations a peer doesn't support on a given Node are skipped.
+        node: ['22.17.0', '22.19.0', '22', '24', '26']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No lockfile to key on: the consumer projects resolve the latest version in each
+      # range. Rotate weekly so the cache doesn't go stale.
+      - name: Cache key
+        id: cache-key
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: consumer-npm-${{ runner.os }}-${{ steps.cache-key.outputs.week }}-${{ hashFiles('scripts/consumer/*.mjs') }}
+          restore-keys: consumer-npm-${{ runner.os }}-
+
+      - name: Download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: dist
+
+      - name: Smoke matrix (CommonJS and ESM)
+        run: node scripts/consumer/run-matrix.mjs --tarball dist/*.tgz
+
+  types:
+    name: Consumer type check
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: dist
+
+      # Type checking doesn't depend on the Node version, so it runs once
+      - name: Type check (CommonJS and ESM, nodenext)
+        run: node scripts/consumer/check-types.mjs --tarball dist/*.tgz

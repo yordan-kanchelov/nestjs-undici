@@ -1,1 +1,7 @@
-export * from './http-module.type';
+export type {
+  UndiciURLType,
+  CookieJarOption,
+  BeforeRedirectFn,
+  HttpModuleOptions,
+  UndiciRequestOptionsType,
+} from './http-module.type';

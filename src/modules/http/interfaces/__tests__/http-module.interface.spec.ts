@@ -1,7 +1,6 @@
 import type { Provider, Type } from '@nestjs/common';
 
 import {
-  BodyMixin,
   HttpModuleAsyncOptions,
   HttpModuleOptionsFactory,
 } from '../http-module.interface';
@@ -14,11 +13,7 @@ class HttpModuleOptionsFactoryImplMock implements HttpModuleOptionsFactory {
       headers: {
         'Content-Type': 'application/json',
       },
-      method: 'GET',
-      path: '/',
-      protocol: 'http',
-      hostname: 'localhost',
-      port: 3000,
+      baseURL: 'http://localhost:3000',
     };
   }
 }
@@ -30,36 +25,16 @@ describe('http-module.interface', () => {
 
     beforeEach(() => {
       httpModuleOptionsFactory = new HttpModuleOptionsFactoryImplMock();
-      createHttpOptions = httpModuleOptionsFactory.createHttpOptions();
+      // The mock always returns synchronously; the interface itself allows
+      // a Promise too (see `HttpModuleOptionsFactory`).
+      createHttpOptions =
+        httpModuleOptionsFactory.createHttpOptions() as HttpModuleOptions;
     });
     it('should be defined', () => {
       expect(httpModuleOptionsFactory).toBeDefined();
     });
     it('should be headers defined', () => {
       expect(createHttpOptions.headers).toBeDefined();
-    });
-  });
-  describe('BodyMixin', () => {
-    class BodyMixinImpl implements BodyMixin {
-      readonly bodyUsed: boolean;
-      arrayBuffer(): Promise<ArrayBuffer> {
-        throw new Error('Method not implemented.');
-      }
-      blob(): Promise<Blob> {
-        throw new Error('Method not implemented.');
-      }
-      formData(): Promise<never> {
-        throw new Error('Method not implemented.');
-      }
-      json(): Promise<any> {
-        throw new Error('Method not implemented.');
-      }
-      text(): Promise<string> {
-        throw new Error('Method not implemented.');
-      }
-    }
-    it('should be defined', () => {
-      expect(BodyMixinImpl).toBeDefined();
     });
   });
   describe('HttpModuleAsyncOptions', () => {

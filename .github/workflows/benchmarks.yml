@@ -57,6 +57,7 @@ jobs:
     name: HttpService regression check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,19 +65,42 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - name: Build head
         run: npm ci --ignore-scripts && npm run build
       - name: Build base (${{ github.event.pull_request.base.ref }})
         run: |
           git worktree add ../base ${{ github.event.pull_request.base.sha }}
           cd ../base && npm ci --ignore-scripts && npm run build
-      - name: Compare throughput
+      - name: Compare client CPU time per request
+        # compare.js writes its own summary table to $GITHUB_STEP_SUMMARY. On a regression it
+        # retries once (fresh rounds) before failing, so a single unlucky round doesn't fail the PR.
         run: |
           node benchmarks/micro/compare.js --base ../base --head . \
-            --rounds 5 --duration 5 --threshold 10 --markdown micro-benchmark.md
-      - name: Publish summary
-        if: always()
-        run: '[ -f micro-benchmark.md ] && cat micro-benchmark.md >> "$GITHUB_STEP_SUMMARY" || true'
+            --rounds 5 --duration 2 --threshold 10
+
+  ab_check:
+    name: End-to-end A/B check (no Docker, no k6)
+    # PRs and releases (this workflow is called by Release once a version is published).
+    # Informational only: continue-on-error keeps it from ever failing the run.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_call'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build and pack the library
+        run: ./benchmarks/scripts/pack-lib.sh
+      - name: Install benchmark dependencies
+        working-directory: benchmarks
+        run: npm ci && npm run install-lib
+      - name: Run the A/B check
+        # Writes its own markdown summary to $GITHUB_STEP_SUMMARY.
+        working-directory: benchmarks
+        run: npm run bench:ab
 
   full:
     name: Full benchmark (Node ${{ matrix.node-version }})
@@ -111,7 +135,7 @@ jobs:
       - name: Wait for services
         run: |
           case "${{ matrix.node-version }}" in 22) BASE=3010;; 24) BASE=3020;; 26) BASE=3030;; esac
-          for OFFSET in 1 2 3 4 5 6 7; do
+          for OFFSET in 1 2 3 4 5 6 7 8; do
             URL="http://localhost:$((BASE + OFFSET))/api"; [ $OFFSET = 1 ] && URL="$URL/data"
             for i in $(seq 1 90); do curl -sf "$URL" > /dev/null && break; sleep 2; done
             if ! curl -sf "$URL" > /dev/null; then
@@ -157,18 +181,18 @@ jobs:
           pattern: benchmark-results-node*
           path: artifacts
           merge-multiple: true
-      - name: Generate report, README tables and docs page
+      - name: Generate the docs page and both README headlines
         working-directory: benchmarks
         run: |
           cp ../artifacts/* results/
-          node generate-comparison-report.js
-          node generate-comparison-report.js --update-readme
           node generate-comparison-report.js --docs ../docs/benchmarks.md
+          node generate-comparison-report.js --headline ../README.md
+          node generate-comparison-report.js --headline README.md
       - name: Commit results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add benchmarks/results benchmarks/README.md docs/benchmarks.md
+          git add benchmarks/results benchmarks/README.md docs/benchmarks.md README.md
           if git diff --cached --quiet; then echo "No changes"; exit 0; fi
           git commit -m "chore(benchmarks): update results [skip ci]" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           git pull --rebase origin main

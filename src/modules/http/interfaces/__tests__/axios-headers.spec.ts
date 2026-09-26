@@ -1,4 +1,8 @@
-import { AxiosHeaders } from '../axios-headers';
+import {
+  AxiosHeaders,
+  sanitizeByteStringHeaderValue,
+  sanitizeHeadersToByteString,
+} from '../axios-headers';
 
 describe('AxiosHeaders', () => {
   describe('bracket notation support', () => {
@@ -150,9 +154,9 @@ describe('AxiosHeaders', () => {
         }
       }
 
-      expect(found).toContain('content-type');
-      expect(found).toContain('authorization');
-      expect(found).toContain('x-custom');
+      expect(found).toContain('Content-Type');
+      expect(found).toContain('Authorization');
+      expect(found).toContain('X-Custom');
     });
   });
 
@@ -294,20 +298,20 @@ describe('AxiosHeaders', () => {
     });
   });
 
-  describe('forEach', () => {
-    it('should iterate over headers', () => {
+  describe('iteration (no forEach() - see axios-headers.ts)', () => {
+    it('should iterate over headers via Array.from()/for...of', () => {
       const headers = new AxiosHeaders({
         'Content-Type': 'application/json',
         Authorization: 'Bearer token',
       });
 
       const collected: Array<[string, any]> = [];
-      headers.forEach((value, key) => {
+      for (const [key, value] of headers) {
         collected.push([key, value]);
-      });
+      }
 
-      expect(collected).toContainEqual(['content-type', 'application/json']);
-      expect(collected).toContainEqual(['authorization', 'Bearer token']);
+      expect(collected).toContainEqual(['Content-Type', 'application/json']);
+      expect(collected).toContainEqual(['Authorization', 'Bearer token']);
     });
   });
 
@@ -321,8 +325,8 @@ describe('AxiosHeaders', () => {
       const json = headers.toJSON();
 
       expect(json).toEqual({
-        'content-type': 'application/json',
-        authorization: 'Bearer token',
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer token',
       });
     });
   });
@@ -426,39 +430,33 @@ describe('AxiosHeaders', () => {
         collected.push([key, value]);
       }
 
-      expect(collected).toContainEqual(['content-type', 'application/json']);
-      expect(collected).toContainEqual(['authorization', 'Bearer token']);
+      expect(collected).toContainEqual(['Content-Type', 'application/json']);
+      expect(collected).toContainEqual(['Authorization', 'Bearer token']);
     });
 
-    it('should support entries()', () => {
-      const headers = new AxiosHeaders({
-        'Content-Type': 'application/json',
-      });
-
-      const entries = Array.from(headers.entries());
-      expect(entries).toContainEqual(['content-type', 'application/json']);
-    });
-
-    it('should support keys()', () => {
-      const headers = new AxiosHeaders({
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer token',
-      });
-
-      const keys = Array.from(headers.keys());
-      expect(keys).toContain('content-type');
-      expect(keys).toContain('authorization');
-    });
-
-    it('should support values()', () => {
+    // No separate entries()/keys()/values(): axios' own `.d.ts` declares
+    // only `[Symbol.iterator]` on `AxiosHeaders` (tested above), and adding
+    // extra public members beyond axios' own would break mutual
+    // assignability (plan.md "feat(axiosRef): make it a real axios
+    // instance") - see the `setAcceptEncoding` removal note in
+    // `axios-headers.ts`. Use `Array.from(headers)`,
+    // `Object.keys(headers.toJSON())` and `Object.values(headers.toJSON())`.
+    it('Array.from/Object.keys/Object.values work through toJSON()/the iterator', () => {
       const headers = new AxiosHeaders({
         'Content-Type': 'application/json',
         Authorization: 'Bearer token',
       });
 
-      const values = Array.from(headers.values());
-      expect(values).toContain('application/json');
-      expect(values).toContain('Bearer token');
+      expect(Array.from(headers)).toContainEqual([
+        'Content-Type',
+        'application/json',
+      ]);
+      expect(Object.keys(headers.toJSON())).toEqual(
+        expect.arrayContaining(['Content-Type', 'Authorization']),
+      );
+      expect(Object.values(headers.toJSON())).toEqual(
+        expect.arrayContaining(['application/json', 'Bearer token']),
+      );
     });
   });
 
@@ -481,6 +479,210 @@ describe('AxiosHeaders', () => {
         '00-123456789abcdef-fedcba987654321-01',
       );
       expect(headers.get('tracestate')).toBe('vendor=value');
+    });
+  });
+
+  describe('casing parity with axios (plan.md "feat(axiosRef): make it a real axios instance")', () => {
+    it('preserves the casing a header was first set with', () => {
+      const headers = new AxiosHeaders();
+      headers.set('Content-Type', 'application/json');
+      expect(Object.keys(headers.toJSON())).toEqual(['Content-Type']);
+    });
+
+    it('a later set() with different casing keeps the original casing', () => {
+      const headers = new AxiosHeaders({ 'Content-Type': 'application/json' });
+      headers.set('CONTENT-TYPE', 'text/plain');
+      expect(headers.toJSON()).toEqual({ 'Content-Type': 'text/plain' });
+    });
+
+    it('delete() then set() re-establishes the casing', () => {
+      const headers = new AxiosHeaders({ 'Content-Type': 'application/json' });
+      headers.delete('content-type');
+      headers.set('CONTENT-TYPE', 'text/plain');
+      expect(headers.toJSON()).toEqual({ 'CONTENT-TYPE': 'text/plain' });
+    });
+
+    it('get/has/delete stay case-insensitive regardless of stored casing', () => {
+      const headers = new AxiosHeaders({ 'X-Custom-Header': 'v' });
+      expect(headers.get('x-custom-header')).toBe('v');
+      expect(headers.has('X-CUSTOM-HEADER')).toBe(true);
+      expect(headers.delete('x-Custom-Header')).toBe(true);
+      expect(headers.has('X-Custom-Header')).toBe(false);
+    });
+
+    it('normalize(true) title-cases every header name', () => {
+      const headers = new AxiosHeaders({
+        'content-type': 'application/json',
+        AUTHORIZATION: 'Bearer t',
+        'x-custom_header': 'v',
+      });
+      headers.normalize(true);
+      // Ported from axios' own `formatHeader` regex, which only title-cases
+      // the letter right after a `-` boundary; `_` doesn't break a `\w*`
+      // run, so 'x-custom_header' -> 'X-Custom_header' (lower-case `h`) -
+      // matches axios' own (occasionally surprising) behaviour exactly.
+      expect(headers.toJSON()).toEqual({
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer t',
+        'X-Custom_header': 'v',
+      });
+    });
+
+    it('normalize() / normalize(false) is a no-op', () => {
+      const headers = new AxiosHeaders({ 'content-type': 'application/json' });
+      headers.normalize();
+      expect(headers.toJSON()).toEqual({ 'content-type': 'application/json' });
+    });
+
+    it('toJSON() reflects the preserved casing, not a lower-cased one', () => {
+      const headers = new AxiosHeaders({
+        'X-Request-Id': 'abc',
+        Authorization: 'Bearer t',
+      });
+      expect(headers.toJSON()).toEqual({
+        'X-Request-Id': 'abc',
+        Authorization: 'Bearer t',
+      });
+    });
+
+    it('bracket notation preserves casing too', () => {
+      const headers = new AxiosHeaders();
+      (headers as any)['X-Foo'] = 'bar';
+      expect(Object.keys(headers.toJSON())).toEqual(['X-Foo']);
+      expect((headers as any)['x-foo']).toBe('bar');
+    });
+
+    it('set(name, value, false) only sets when not already present', () => {
+      const headers = new AxiosHeaders({ 'X-Foo': 'first' });
+      headers.set('x-foo', 'second', false);
+      expect(headers.get('x-foo')).toBe('first');
+      headers.set('X-Bar', 'value', false);
+      expect(headers.get('x-bar')).toBe('value');
+    });
+
+    it('get(name, true) parses key=value tokens like axios', () => {
+      const headers = new AxiosHeaders({
+        'Content-Type': 'multipart/form-data; boundary=abc123',
+      });
+      expect(headers.get('content-type', true)).toEqual({
+        'multipart/form-data': undefined,
+        boundary: 'abc123',
+      });
+    });
+  });
+
+  /**
+   * plan.md phase 2 "fix: sanitize CRLF / non-Latin1 header values like
+   * axios" (found by upstream conformance): axios strips these before ever
+   * handing a header to Node's `http.request`; undici instead throws
+   * `InvalidArgumentError` for the same input. Checked against real axios
+   * 1.20 (`lib/helpers/sanitizeHeaderValue.js`).
+   */
+  describe('header value sanitization (CRLF / non-Latin1, matching axios)', () => {
+    it('strips a bare embedded newline/CR, matching what Node http silently does', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Bad', 'a\nb');
+      expect(headers.get('x-bad')).toBe('ab');
+
+      headers.set('X-Bad2', 'a\r\nb');
+      expect(headers.get('x-bad2')).toBe('ab');
+    });
+
+    it('strips other C0/DEL control characters', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Bad', 'a\u0001\u0007b\u007f');
+      expect(headers.get('x-bad')).toBe('ab');
+    });
+
+    it('a non-ASCII/non-Latin-1 code point (an emoji) is left untouched by set() - that only happens once, at dispatch time (sanitizeHeadersToByteString)', () => {
+      // axios sanitizes a value twice, at two different points in time -
+      // set() only strips control characters (see the doc comment on
+      // `sanitizeHeaderValue` in axios-headers.ts for exactly why: an
+      // axiosRef request interceptor must still be able to read/transform
+      // the original Unicode text between the two passes).
+      const headers = new AxiosHeaders();
+      headers.set('X-Emoji', 'a\u{1F600}b');
+      expect(headers.get('x-emoji')).toBe('a\u{1F600}b');
+    });
+
+    it('keeps a Latin-1 (0x80-0xff) character - only strips the truly invalid range', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Latin1', 'café');
+      expect(headers.get('x-latin1')).toBe('café');
+    });
+
+    it('trims a leading/trailing space or tab, even with no other invalid character', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Trim', '\t value \t');
+      expect(headers.get('x-trim')).toBe('value');
+    });
+
+    it('sanitizes every element of an array value', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Multi', ['a\nb', 'c\rd']);
+      expect(headers.get('x-multi')).toEqual(['ab', 'cd']);
+    });
+
+    it('leaves false/null/number/boolean values untouched (not stringified - a pre-existing, deliberate difference from axios; only string content is sanitized)', () => {
+      const headers = new AxiosHeaders();
+      headers.set('X-Num', 123);
+      headers.set('X-Bool', true);
+      headers.set('X-Null', null);
+      expect(headers.get('x-num')).toBe(123);
+      expect(headers.get('x-bool')).toBe(true);
+      expect(headers.get('x-null')).toBe(null);
+    });
+
+    it('also sanitizes when merging headers from another AxiosHeaders instance', () => {
+      const source = new AxiosHeaders();
+      source.set('X-Bad', 'a\nb');
+      const target = new AxiosHeaders();
+      target.set(source);
+      expect(target.get('x-bad')).toBe('ab');
+    });
+  });
+
+  /**
+   * The second sanitization pass (`sanitizeByteStringHeaderValue`/
+   * `sanitizeHeadersToByteString`), applied once at dispatch time by
+   * `HttpService.executeRequest` - after axiosRef request interceptors (if
+   * any) have already run. See the doc comment on `sanitizeHeaderValue`
+   * above for why this can't be folded into the set()-time pass.
+   */
+  describe('sanitizeByteStringHeaderValue / sanitizeHeadersToByteString (the dispatch-time pass)', () => {
+    it('strips a non-Latin1 character, unlike set()', () => {
+      expect(sanitizeByteStringHeaderValue('a\u{1F600}b')).toBe('ab');
+    });
+
+    it('keeps a Latin-1 (0x80-0xff) character', () => {
+      expect(sanitizeByteStringHeaderValue('café')).toBe('café');
+    });
+
+    it('also re-strips a control character (a superset of the set()-time pass)', () => {
+      expect(sanitizeByteStringHeaderValue('a\nb')).toBe('ab');
+    });
+
+    it('sanitizeHeadersToByteString returns the same object reference when nothing needs stripping (no allocation)', () => {
+      const headers = { 'Content-Type': 'application/json', 'X-A': 'plain' };
+      expect(sanitizeHeadersToByteString(headers)).toBe(headers);
+    });
+
+    it('sanitizeHeadersToByteString returns a new object, without mutating the original, when something needs stripping', () => {
+      const headers = { 'X-Emoji': 'a\u{1F600}b', 'X-Plain': 'ok' };
+      const result = sanitizeHeadersToByteString(headers);
+      expect(result).not.toBe(headers);
+      expect(result).toEqual({ 'X-Emoji': 'ab', 'X-Plain': 'ok' });
+      // The original, e.g. still read by response.config.headers /
+      // error.config.headers, is untouched - matches axios (whose
+      // `config.headers` reflects the pre-dispatch-pass AxiosHeaders value).
+      expect(headers['X-Emoji']).toBe('a\u{1F600}b');
+    });
+
+    it('sanitizes array header values too', () => {
+      const headers = { 'X-Multi': ['a\u{1F600}b', 'plain'] };
+      expect(sanitizeHeadersToByteString(headers)).toEqual({
+        'X-Multi': ['ab', 'plain'],
+      });
     });
   });
 });

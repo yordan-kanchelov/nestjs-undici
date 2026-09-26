@@ -118,4 +118,14 @@ describe('HttpModule', () => {
       },
     });
   });
+
+  it('registerAsync() without useFactory/useClass/useExisting throws a clear error', () => {
+    // Previously this silently registered a provider with `provide:
+    // undefined` instead of failing - plan.md phase 2 "types: axios
+    // interop" / phase 3 "`strict` TypeScript" (one of the 7 known errors
+    // in plan/reports/package-quality.md).
+    expect(() => HttpModule.registerAsync({})).toThrow(
+      'HttpModule.registerAsync() requires one of useFactory, useClass or useExisting',
+    );
+  });
 });
