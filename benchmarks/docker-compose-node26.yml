@@ -1,3 +1,17 @@
+# One app image (apps/nestjs-app), 6 services that only differ by CLIENT /
+# PLATFORM / INTERCEPTOR, plus the mock backend and the raw-undici floor.
+# Ports are $(portBase)+offset; see k6-scripts/lib/benchmark.js SERVICES.
+x-nestjs-app: &nestjs-app
+  build:
+    context: .
+    dockerfile: apps/nestjs-app/Dockerfile
+    args:
+      NODE_VERSION: 26
+  depends_on:
+    - mock-service-node26
+  networks:
+    - nestjs-benchmark-node26
+
 services:
   mock-service-node26:
     build:
@@ -13,96 +27,78 @@ services:
     networks:
       - nestjs-benchmark-node26
 
-  nestjs-fastify-axios-node26:
-    build:
-      context: .
-      dockerfile: apps/nestjs-fastify-axios/Dockerfile
-      args:
-        NODE_VERSION: 26
+  express-axios-node26:
+    <<: *nestjs-app
     ports:
       - "3032:3002"
     environment:
       - PORT=3002
+      - CLIENT=axios
+      - PLATFORM=express
       - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
-    depends_on:
-      - mock-service-node26
-    networks:
-      - nestjs-benchmark-node26
 
-  nestjs-fastify-undici-node26:
-    build:
-      context: .
-      dockerfile: apps/nestjs-fastify-undici/Dockerfile
-      args:
-        NODE_VERSION: 26
+  express-undici-node26:
+    <<: *nestjs-app
     ports:
       - "3033:3003"
     environment:
       - PORT=3003
+      - CLIENT=undici
+      - PLATFORM=express
       - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
-    depends_on:
-      - mock-service-node26
-    networks:
-      - nestjs-benchmark-node26
 
-  nestjs-express-axios-node26:
-    build:
-      context: .
-      dockerfile: apps/nestjs-express-axios/Dockerfile
-      args:
-        NODE_VERSION: 26
+  fastify-axios-node26:
+    <<: *nestjs-app
     ports:
       - "3034:3004"
     environment:
       - PORT=3004
+      - CLIENT=axios
+      - PLATFORM=fastify
       - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
-    depends_on:
-      - mock-service-node26
-    networks:
-      - nestjs-benchmark-node26
 
-  nestjs-express-axios-interceptor-node26:
-    build:
-      context: .
-      dockerfile: apps/nestjs-express-axios-interceptor/Dockerfile
-      args:
-        NODE_VERSION: 26
+  fastify-undici-node26:
+    <<: *nestjs-app
     ports:
       - "3035:3005"
     environment:
       - PORT=3005
+      - CLIENT=undici
+      - PLATFORM=fastify
       - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
-    depends_on:
-      - mock-service-node26
-    networks:
-      - nestjs-benchmark-node26
 
-  nestjs-fastify-axios-interceptor-node26:
-    build:
-      context: .
-      dockerfile: apps/nestjs-fastify-axios-interceptor/Dockerfile
-      args:
-        NODE_VERSION: 26
+  express-axios-interceptor-node26:
+    <<: *nestjs-app
     ports:
       - "3036:3006"
     environment:
       - PORT=3006
+      - CLIENT=axios
+      - PLATFORM=express
+      - INTERCEPTOR=1
       - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
-    depends_on:
-      - mock-service-node26
-    networks:
-      - nestjs-benchmark-node26
 
-  nestjs-fastify-undici-interceptor-node26:
-    build:
-      context: .
-      dockerfile: apps/nestjs-fastify-undici-interceptor/Dockerfile
-      args:
-        NODE_VERSION: 26
+  express-undici-interceptor-node26:
+    <<: *nestjs-app
     ports:
       - "3037:3007"
     environment:
       - PORT=3007
+      - CLIENT=undici
+      - PLATFORM=express
+      - INTERCEPTOR=1
+      - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
+
+  undici-raw-node26:
+    build:
+      context: .
+      dockerfile: apps/undici-raw/Dockerfile
+      args:
+        NODE_VERSION: 26
+    ports:
+      - "3038:3008"
+    environment:
+      - PORT=3008
       - MOCK_SERVICE_URL=http://mock-service-node26:3001/api/data
     depends_on:
       - mock-service-node26

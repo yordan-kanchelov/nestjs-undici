@@ -1,120 +1,98 @@
 {
   "test_info": {
     "node_version": "Node.js 24",
-    "timestamp": "2026-09-25T11:02:38.039Z",
-    "duration_seconds": 445,
+    "timestamp": "2026-09-26T04:24:38.315Z",
+    "duration_seconds": 42,
     "scenarios": [
       "express_axios",
+      "express_undici",
       "fastify_axios",
       "fastify_undici",
       "express_axios_interceptor",
-      "fastify_axios_interceptor",
-      "fastify_undici_interceptor"
+      "express_undici_interceptor",
+      "undici_raw"
     ],
-    "max_vus": 100,
-    "environment": "GitHub Actions ubuntu-latest runner, Docker Compose (one container per app), k6 on the same runner",
-    "library_ref": "nestjs-axios-undici@0.6.1 (3c9fcf1)"
+    "max_vus": 30,
+    "environment": "Local run (this sandbox), benchmarks/e2e harness (no Docker, no k6), single Node.js version",
+    "library_ref": "nestjs-axios-undici@0.6.1 (ef37707)"
   },
   "results": {
     "express_axios": {
-      "requests": 56839,
-      "duration_avg": 78.978137219727,
-      "duration_med": 67.815329,
-      "duration_p95": 141.90767219999998,
-      "duration_p99": 151.16070678,
-      "duration_min": 1.07432,
-      "duration_max": 310.743561,
+      "requests": 5034,
+      "duration_avg": 35.86456688816054,
+      "duration_med": 33.676708999999846,
+      "duration_p95": 51.85921899999994,
+      "duration_p99": 64.21598499999982,
+      "duration_min": 17.16880600000013,
+      "duration_max": 227.37626899999987,
       "error_rate": 0,
-      "rps": 811.9857142857143
+      "rps": 835.1028533510286
+    },
+    "express_undici": {
+      "requests": 20019,
+      "duration_avg": 8.994573537938972,
+      "duration_med": 8.605722000000242,
+      "duration_p95": 11.692896000000474,
+      "duration_p99": 15.287790000000314,
+      "duration_min": 4.245122000000265,
+      "duration_max": 22.38521199999923,
+      "error_rate": 0,
+      "rps": 3333.721898417985
     },
     "fastify_axios": {
-      "requests": 53891,
-      "duration_avg": 83.32082425514456,
-      "duration_med": 68.401554,
-      "duration_p95": 166.2120605,
-      "duration_p99": 240.28147909999998,
-      "duration_min": 1.0512,
-      "duration_max": 322.567481,
+      "requests": 5645,
+      "duration_avg": 31.93904922781226,
+      "duration_med": 29.981955999999627,
+      "duration_p95": 45.51560400000017,
+      "duration_p99": 56.85296500000186,
+      "duration_min": 14.441361999997753,
+      "duration_max": 74.43501699999979,
       "error_rate": 0,
-      "rps": 769.8714285714286
+      "rps": 937.3962138824311
     },
     "fastify_undici": {
-      "requests": 176630,
-      "duration_avg": 25.24356379544254,
-      "duration_med": 21.5031265,
-      "duration_p95": 43.46135284999999,
-      "duration_p99": 47.82122490999997,
-      "duration_min": 0.5585,
-      "duration_max": 89.072075,
+      "requests": 23403,
+      "duration_avg": 7.693700907405081,
+      "duration_med": 7.300881000002846,
+      "duration_p95": 10.41377900000225,
+      "duration_p99": 13.638373000001593,
+      "duration_min": 2.8440349999946193,
+      "duration_max": 18.319422000000486,
       "error_rate": 0,
-      "rps": 2523.285714285714
+      "rps": 3895.954719493924
     },
     "express_axios_interceptor": {
-      "requests": 42212,
-      "duration_avg": 106.4045939850046,
-      "duration_med": 86.668969,
-      "duration_p95": 214.09956454999997,
-      "duration_p99": 238.24179043999993,
-      "duration_min": 1.675489,
-      "duration_max": 414.488121,
+      "requests": 5005,
+      "duration_avg": 36.04444671448538,
+      "duration_med": 34.513206000003265,
+      "duration_p95": 49.4577000000063,
+      "duration_p99": 71.71186200000375,
+      "duration_min": 15.980529000000388,
+      "duration_max": 97.45349500000157,
       "error_rate": 0,
-      "rps": 603.0285714285715
+      "rps": 830.8432934926959
     },
-    "fastify_axios_interceptor": {
-      "requests": 35166,
-      "duration_avg": 127.72171041190411,
-      "duration_med": 117.99692250000001,
-      "duration_p95": 222.73154875,
-      "duration_p99": 238.11968349999998,
-      "duration_min": 1.84561,
-      "duration_max": 458.72391,
+    "express_undici_interceptor": {
+      "requests": 10919,
+      "duration_avg": 16.499661475867786,
+      "duration_med": 15.472859000001336,
+      "duration_p95": 23.431484000000637,
+      "duration_p99": 27.763428999998723,
+      "duration_min": 7.838904999996885,
+      "duration_max": 61.45103100000415,
       "error_rate": 0,
-      "rps": 502.37142857142857
+      "rps": 1816.8053244592347
     },
-    "fastify_undici_interceptor": {
-      "requests": 71422,
-      "duration_avg": 62.60146686994173,
-      "duration_med": 54.3852495,
-      "duration_p95": 102.0925637,
-      "duration_p99": 109.04503747999999,
-      "duration_min": 0.92127,
-      "duration_max": 193.038359,
+    "undici_raw": {
+      "requests": 21232,
+      "duration_avg": 8.494984797946435,
+      "duration_med": 7.443650999994134,
+      "duration_p95": 16.77275699999882,
+      "duration_p99": 23.192135000004782,
+      "duration_min": 1.3164749999996275,
+      "duration_max": 49.064941999997245,
       "error_rate": 0,
-      "rps": 1020.3142857142857
-    }
-  },
-  "comparison": {
-    "fastify_axios_vs_express_axios": {
-      "throughput_improvement": "-5.19%",
-      "avg_response_improvement": "-5.50%",
-      "p95_response_improvement": "-17.13%",
-      "p99_response_improvement": "-58.96%"
-    },
-    "fastify_undici_vs_express_axios": {
-      "throughput_improvement": "210.75%",
-      "avg_response_improvement": "68.04%",
-      "p95_response_improvement": "69.37%",
-      "p99_response_improvement": "68.36%"
-    },
-    "fastify_undici_vs_fastify_axios": {
-      "throughput_improvement": "227.75%",
-      "avg_response_improvement": "69.70%",
-      "p95_response_improvement": "73.85%",
-      "p99_response_improvement": "80.10%"
-    },
-    "interceptor_overhead": {
-      "express_axios": {
-        "throughput_impact": "-25.73%",
-        "avg_response_impact": "25.78%"
-      },
-      "fastify_axios": {
-        "throughput_impact": "-34.75%",
-        "avg_response_impact": "34.76%"
-      },
-      "fastify_undici": {
-        "throughput_impact": "-59.56%",
-        "avg_response_impact": "59.68%"
-      }
+      "rps": 3528.0824194084416
     }
   }
 }
