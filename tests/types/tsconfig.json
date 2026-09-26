@@ -1,0 +1,26 @@
+{
+  // Compile-only drop-in checks (`npm run typecheck:compat`): kept out of the
+  // main tsconfig.json (so `tests/types` isn't type-checked twice, once
+  // loosely and once strictly) and out of Jest (no build output is emitted or
+  // executed; these files only need to compile with `--strict`).
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "node20",
+    "types": ["node"],
+
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+
+    "noEmit": true
+  },
+  "include": ["."]
+}

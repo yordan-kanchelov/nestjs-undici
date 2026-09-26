@@ -1,8 +1,8 @@
 # Interceptors
 
-`nestjs-axios-undici` supports request/response interceptors in two styles: the axios-style `axiosRef.interceptors` API and native interceptors. You can also use [Undici's Dispatcher system](https://github.com/nodejs/undici#dispatcher) for lower-level control.
+`nestjs-axios-undici` supports request/response interceptors in two styles: the axios-style `axiosRef.interceptors` API and native interceptors. You can also use undici's own `Dispatcher` system for lower-level control. See [Custom dispatchers](#custom-dispatchers) below.
 
-## Axios-style Interceptors
+## Axios-style interceptors
 
 Existing `@nestjs/axios` interceptor code keeps working, including `eject()` and `clear()`:
 
@@ -30,9 +30,21 @@ export class ApiService implements OnModuleInit {
 }
 ```
 
-One difference from axios: request interceptors run in registration order and response interceptors in reverse registration order (axios does the opposite). See [Supported Axios Options](/docs/axios-supported-options.md#axiosref).
+Interceptors run in axios' own order: request interceptors last-registered-first, response interceptors first-registered-first. `runWhen` and `synchronous` (the 3rd argument to `use()`) are honoured too. The config object an interceptor sees, and `response.config`/`error.config`, carries raw `data`, `params` and `baseURL`, a lower-case `method`, `headers` as `AxiosHeaders`, and any custom field you set on it, for example a retry flag. This is what makes the common "retry once on 401" pattern work:
 
-## Native Interceptors
+```typescript
+this.httpService.axiosRef.interceptors.response.use(undefined, error => {
+  if (error.response?.status === 401 && !error.config._retry) {
+    error.config._retry = true;
+    return this.httpService.axiosRef.request(error.config);
+  }
+  return Promise.reject(error);
+});
+```
+
+See [Axios compatibility](/docs/axios-supported-options.md#axiosref).
+
+## Native interceptors
 
 A native interceptor receives the request (`{ url, options }`, where `options` are the undici request options) and the next handler, and returns an Observable. The response it sees is already axios-compatible (`status`, `data`, `headers`, ...), and non-2xx responses arrive as axios errors.
 
@@ -84,9 +96,9 @@ export class LoggingInterceptor implements HttpInterceptor {
 
 ### Order
 
-Interceptors run in the order they are registered: the first one sees the request first and the response last. Interceptors added with `addInterceptor()` run after the ones passed to the module.
+Interceptors run in the order they are registered. The first one sees the request first and the response last. Interceptors added with `addInterceptor()` run after the ones passed to the module.
 
-## Registering Interceptors
+## Registering interceptors
 
 ### In `register()`
 
@@ -117,7 +129,7 @@ HttpModule.registerAsync({
 });
 ```
 
-## Interceptors with Dependencies
+## Interceptors with dependencies
 
 Because a class interceptor passed to `register()` is instantiated inside the `HttpModule`, its constructor dependencies must be resolvable from there. Adding the dependencies (or the interceptor) to your own module's `providers`, or to a module you import, is **not** enough:
 
@@ -201,16 +213,6 @@ export class AppModule {}
 
 For testing interceptors, see [Testing](/docs/guides/testing.md#testing-interceptors).
 
-## Custom Dispatchers
+## Custom dispatchers
 
-For connection pooling, proxies or mocks, use a custom undici `Dispatcher`, either in the module configuration (`dispatcher`), at runtime (`httpService.setGlobalDispatcher(...)`) or per request (`request(url, { dispatcher })`).
-
-```typescript
-import { Agent } from 'undici';
-
-HttpModule.register({
-  dispatcher: new Agent({ connections: 10 }),
-});
-```
-
-Please refer to the [Undici documentation](https://github.com/nodejs/undici) for `MockAgent`, `ProxyAgent` and other dispatchers.
+For connection pooling, proxies or mocks, use a custom undici `Dispatcher`, either in the module options (`dispatcher`), at runtime (`httpService.setDispatcher(...)`) or per request (`request(url, { dispatcher })`). See [Advanced configuration (dispatchers)](/docs/guides/configuration.md#advanced-configuration-dispatchers) for how to build one, and the [undici documentation](https://github.com/nodejs/undici) for `MockAgent`, `ProxyAgent` and other dispatchers.

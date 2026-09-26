@@ -1,6 +1,6 @@
 # HttpModule
 
-`HttpModule` provides `HttpService`. Its API matches `@nestjs/axios`' `HttpModule`: import it as is, or configure it with `register()` or `registerAsync()`.
+`HttpModule` provides `HttpService`. Its API matches the `HttpModule` from `@nestjs/axios`. Import it as is, or configure it with `register()` or `registerAsync()`.
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -12,7 +12,7 @@ import { HttpModule } from 'nestjs-axios-undici';
 export class AppModule {}
 ```
 
-Each import of `HttpModule.register()` / `registerAsync()` creates its own `HttpService` with its own configuration and interceptors.
+Each import of `HttpModule`, `HttpModule.register()` or `registerAsync()` creates its own `HttpService`, with its own configuration, interceptors and dispatcher. Bare `HttpModule` (no `register()` call) gets empty options. Previously, every app that imported the bare module this way shared the *same* empty options object, so calling `setDispatcher()` (or the old `setGlobalDispatcher()`) in one app leaked into every other app's `HttpService` too. That's fixed now: each app gets its own.
 
 ## `register(options)`
 
@@ -65,10 +65,15 @@ HttpModule.registerAsync({ useClass: HttpConfigService });
 
 `register()` and the object returned by `registerAsync()` accept:
 
-- **Axios options**: `baseURL`, `headers`, `timeout`, `params`, `paramsSerializer`, `auth`, `validateStatus`, `responseType`, `maxRedirects`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials`, `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`. They are detected and mapped to undici; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for what each one does and how it differs from axios.
+- **Axios options**: `baseURL`, `headers`, `timeout`, `params`, `paramsSerializer`, `auth`, `validateStatus`, `responseType`, `maxRedirects`, `httpAgent`/`httpsAgent`, `proxy`, `withCredentials` (a no-op, like axios on Node.js), `maxBodyLength`/`maxContentLength`, `transformRequest`/`transformResponse`. They are detected and mapped to undici; see [Module-level axios options](/docs/axios-supported-options.md#module-level-axios-options) for what each one does and how it differs from axios.
+- **`cookieJar`**: not an axios option. Opts into cookie storage/replay through a caller-supplied `tough-cookie` `CookieJar` instance; see [Cookies: `cookieJar`](/docs/axios-supported-options.md#cookies-cookiejar).
 - **Undici request options**, used as defaults for every request, for example `dispatcher`, `headersTimeout` and `bodyTimeout`. See the [undici `request()` options](https://github.com/nodejs/undici#undicirequesturl-options-promise).
 - **`interceptors`**: an array of interceptors (see below).
 - **`global`**: registers the module as global, as in `@nestjs/axios`.
+
+## Dispatchers and shutdown
+
+Whatever dispatcher `register()`/`registerAsync()` options produce (an explicit `dispatcher`, or one built from `proxy`/`cookieJar`/`socketPath`/`httpAgent`/`httpsAgent`/`httpVersion: 2`), or the per-service default `Agent` when none of that applies, `app.close()` gracefully closes everything this library created for that `HttpService`. This is bounded by a short internal grace period, so an abandoned `responseType: 'stream'` response can't hang shutdown forever. See [Dispatchers and connection lifecycle](/docs/http/http.service.md#dispatchers-and-connection-lifecycle). An explicit `dispatcher` you pass in is never closed by this library.
 
 ## `interceptors`
 
@@ -90,7 +95,3 @@ HttpModule.register({
 - Interceptor instances (objects with an `intercept()` method) are used as they are.
 
 See [Interceptors](/docs/guides/interceptors.md) for writing interceptors and for interceptors that inject other providers.
-
-## `TypedHttpModule`
-
-`TypedHttpModule.register(options)` behaves like `HttpModule.register(options)`. The returned module also carries a type-only marker, which `ExtractHttpServiceType<typeof module>` resolves to `HttpService`.

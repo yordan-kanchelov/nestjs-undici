@@ -8,6 +8,10 @@
 import { Module, Injectable, OnModuleInit } from '@nestjs/common';
 import { HttpModule, HttpService, AxiosHeaders } from '../lib';
 import { firstValueFrom } from 'rxjs';
+// `http-cookie-agent`/`tough-cookie` are optional peer dependencies of
+// nestjs-axios-undici, only needed for the `cookieJar` option below
+// (`npm i http-cookie-agent tough-cookie`).
+import { CookieJar } from 'tough-cookie';
 
 // `npm run test:examples` points this at a local echo server
 const API =
@@ -279,15 +283,19 @@ export class AxiosCompatibilityService implements OnModuleInit {
     HttpModule.register({
       // All these axios options are automatically detected and mapped!
       timeout: 30000, // Mapped to headersTimeout & bodyTimeout (30 seconds)
-      maxRedirects: 5, // Follows up to 5 redirects (undici redirect interceptor)
+      maxRedirects: 5, // Follows up to 5 redirects (default: 21, like axios; 0 disables)
       validateStatus: status => status < 500, // Works exactly like axios
 
       // Request/response size limits (enforced via interceptors)
       maxBodyLength: 10 * 1024 * 1024, // 10MB request body limit
       maxContentLength: 50 * 1024 * 1024, // 50MB response body limit
 
-      // Cookie support
-      withCredentials: true, // Enables automatic cookie handling
+      // Cookie support: `withCredentials` (axios' option) is a no-op here,
+      // matching axios itself on Node.js. Cookie storage/replay is opt-in
+      // through an explicit `cookieJar` instead - only a jar instance is
+      // accepted (never `true`), so you decide its scope; this one is
+      // private to this module's HttpService.
+      cookieJar: new CookieJar(),
 
       // Basic authentication
       auth: {

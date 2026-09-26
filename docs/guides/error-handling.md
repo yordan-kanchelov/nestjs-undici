@@ -1,8 +1,8 @@
-# Error Handling
+# Error handling
 
-`nestjs-axios-undici` follows axios semantics: responses with a status outside the 2xx range are emitted as errors.
+`nestjs-axios-undici` follows axios semantics. Responses with a status outside the 2xx range are emitted as errors.
 
-## HTTP Status Codes
+## HTTP status codes
 
 Failed responses reject with an axios-like error exposing `error.response`, `error.config`, `error.status` and `error.isAxiosError`:
 
@@ -31,9 +31,9 @@ export class CatsService {
 }
 ```
 
-To accept other status codes, pass `validateStatus` in the module configuration or per request, as you would with axios.
+To accept other status codes, pass `validateStatus` in the module options or per request, as you would with axios.
 
-To tell status errors from errors without a response, check `error.response`. Don't rely on `error.request`: unlike axios, it is not set for network errors.
+To tell status errors from errors without a response, check `error.response`. `error.request` is also set for network, timeout and cancellation errors. It's built from the hop that was actually dispatched, and includes `path`, `method`, `host`, `protocol` and `res.responseUrl`. It isn't set in the couple of cases where axios itself never builds a request object either, such as a signal that aborted before the request was ever dispatched, or an unsupported URL protocol.
 
 ```typescript
 import { isAxiosError } from 'nestjs-axios-undici';
@@ -53,7 +53,7 @@ try {
 }
 ```
 
-## Network Errors
+## Network errors
 
 Network errors (DNS failures, refused connections, timeouts, cancellations) are emitted as axios errors too, with the same `code` values axios uses (`ECONNREFUSED`, `ENOTFOUND`, `ECONNRESET`, `ECONNABORTED`, `ERR_CANCELED`, ...). The original undici/Node.js error is available as `error.cause`. Handle them with `try/catch` or RxJS operators:
 
@@ -73,7 +73,9 @@ this.httpService.get('https://api.example.com')
 
 ## Timeouts
 
-A `timeout` (module-level or per request) maps to undici's `headersTimeout` and `bodyTimeout` (about 1s resolution). Like axios, a timeout rejects with `code: 'ECONNABORTED'` and the message `timeout of <n>ms exceeded`:
+A `timeout` (module-level or per request) is a total, deadline-style timeout, like axios. It covers the whole request, from the moment it starts until the response body is fully read. For `responseType: 'stream'`, it covers the request until the response headers arrive, matching axios there too. This is a real timer, not undici's idle `headersTimeout`/`bodyTimeout`. Those are still set alongside it as a backstop, so a response body that trickles in slowly, one byte at a time, still times out at the configured value.
+
+A timeout rejects with `code: 'ECONNABORTED'` and the message `timeout of <n>ms exceeded`, exactly like axios:
 
 ```typescript
 import { isAxiosError } from 'nestjs-axios-undici';
@@ -82,9 +84,19 @@ try {
   await lastValueFrom(this.httpService.get('https://slow-api.com', { timeout: 2000 }));
 } catch (error) {
   if (isAxiosError(error) && error.code === 'ECONNABORTED') {
-    // Handle timeout; error.cause is the undici HeadersTimeoutError/BodyTimeoutError
+    // Handle timeout
   }
 }
+```
+
+Two axios options are honoured on the message/code:
+
+```typescript
+this.httpService.get('https://slow-api.com', {
+  timeout: 2000,
+  timeoutErrorMessage: 'The upstream API took too long to respond',
+  transitional: { clarifyTimeoutError: true }, // code becomes 'ETIMEDOUT' instead of 'ECONNABORTED'
+});
 ```
 
 ## Cancellation
@@ -97,4 +109,4 @@ this.httpService.get('https://api.example.com', { signal: controller.signal }).s
 controller.abort();
 ```
 
-Unsubscribing from the Observable does not cancel the request; use a signal for that.
+Unsubscribing from the Observable before it emits also aborts the request, for example with `timeout()`, `switchMap` or `takeUntil`, as in `@nestjs/axios`.

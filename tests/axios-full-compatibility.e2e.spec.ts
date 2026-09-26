@@ -28,9 +28,9 @@ describe('Axios Full Compatibility E2E Tests', () => {
   const createMockServer = (handler: http.RequestListener): Promise<string> => {
     return new Promise(resolve => {
       mockServer = http.createServer(handler);
-      mockServer.listen(0, 'localhost', () => {
+      mockServer.listen(0, '127.0.0.1', () => {
         const port = (mockServer.address() as AddressInfo).port;
-        resolve(`http://localhost:${port}`);
+        resolve(`http://127.0.0.1:${port}`);
       });
     });
   };
@@ -167,12 +167,14 @@ describe('Axios Full Compatibility E2E Tests', () => {
         });
       });
 
-      it('should handle binary responses as Buffer', async () => {
+      it('should handle binary responses as Buffer with responseType: arraybuffer', async () => {
         const [axiosRes, undiciRes] = await Promise.all([
           firstValueFrom(
             axiosService.get(serverUrl, { responseType: 'arraybuffer' }),
           ),
-          firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
+          firstValueFrom(
+            undiciService.request(serverUrl, { responseType: 'arraybuffer' }),
+          ) as Promise<any>,
         ]);
 
         // Axios returns ArrayBuffer for responseType: 'arraybuffer'
@@ -183,6 +185,16 @@ describe('Axios Full Compatibility E2E Tests', () => {
         // Compare the actual bytes
         const axiosBuffer = Buffer.from(axiosRes.data);
         expect(undiciRes.data.equals(axiosBuffer)).toBe(true);
+      });
+
+      it('should decode octet-stream as a UTF-8 string by default, like axios', async () => {
+        const [axiosRes, undiciRes] = await Promise.all([
+          firstValueFrom(axiosService.get(serverUrl)),
+          firstValueFrom(undiciService.request(serverUrl)) as Promise<any>,
+        ]);
+
+        expect(typeof undiciRes.data).toBe('string');
+        expect(undiciRes.data).toBe(axiosRes.data);
       });
     });
 
@@ -428,7 +440,9 @@ describe('Axios Full Compatibility E2E Tests', () => {
 
       expect(undiciRes.config).toBeDefined();
       expect(undiciRes.config.url).toBe(serverUrl);
-      expect(undiciRes.config.method).toBe('GET');
+      // `config.method` is always lower-case, matching axios.
+      expect(axiosRes.config.method).toBe('get');
+      expect(undiciRes.config.method).toBe('get');
     });
   });
 

@@ -72,8 +72,11 @@ describe('HttpService with Interceptors (e2e)', () => {
     });
 
     it('should have correct number of interceptors', () => {
-      // Includes 2 user interceptors + 1 axios adapter interceptor
-      expect(service.interceptorCount).toBe(3);
+      // The 2 module-registered (function) interceptors above -
+      // `interceptorCount` is the real count now (plan.md phase 3
+      // "HttpService members"), no phantom "+1" for a response adapter that
+      // hasn't existed since the axiosRef pipeline refactor.
+      expect(service.interceptorCount).toBe(2);
     });
   });
 
@@ -87,8 +90,8 @@ describe('HttpService with Interceptors (e2e)', () => {
     });
 
     it('should allow adding interceptors dynamically', async () => {
-      // Starts with 1 (axios adapter interceptor)
-      expect(service.interceptorCount).toBe(1);
+      // No module-registered interceptors yet.
+      expect(service.interceptorCount).toBe(0);
 
       // Add first interceptor
       service.addInterceptor((request, next) => {
@@ -96,7 +99,7 @@ describe('HttpService with Interceptors (e2e)', () => {
         return next.handle(request);
       });
 
-      expect(service.interceptorCount).toBe(2);
+      expect(service.interceptorCount).toBe(1);
 
       // Add second interceptor
       service.addInterceptor((request, next) => {
@@ -104,7 +107,7 @@ describe('HttpService with Interceptors (e2e)', () => {
         return next.handle(request);
       });
 
-      expect(service.interceptorCount).toBe(3);
+      expect(service.interceptorCount).toBe(2);
 
       // Make request
       const result = service.request(postUrl);

@@ -26,9 +26,9 @@ describe('Axios Real-World Scenarios', () => {
   const createMockServer = (handler: http.RequestListener): Promise<string> => {
     return new Promise(resolve => {
       mockServer = http.createServer(handler);
-      mockServer.listen(0, 'localhost', () => {
+      mockServer.listen(0, '127.0.0.1', () => {
         const port = (mockServer.address() as AddressInfo).port;
-        resolve(`http://localhost:${port}`);
+        resolve(`http://127.0.0.1:${port}`);
       });
     });
   };
@@ -198,7 +198,8 @@ describe('Axios Real-World Scenarios', () => {
       expect(logs[0].method).toBe('GET');
       expect(logs[1].type).toBe('response');
       expect(logs[1].status).toBe(200);
-      expect(logs[1].duration).toBeGreaterThan(0);
+      // A loopback request can complete within the same Date.now() millisecond.
+      expect(logs[1].duration).toBeGreaterThanOrEqual(0);
       expect(logs[1].requestId).toBe('12345');
 
       await module.close();
@@ -349,7 +350,7 @@ describe('Axios Real-World Scenarios', () => {
       });
 
       const response: any = await firstValueFrom(
-        httpService.request(serverUrl),
+        httpService.request(serverUrl, { responseType: 'arraybuffer' }),
       );
 
       expect(Buffer.isBuffer(response.data)).toBe(true);
