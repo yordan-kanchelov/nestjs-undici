@@ -1,0 +1,80 @@
+name: Upstream conformance
+
+# Runs @nestjs/axios' and axios' own (unmodified) test files against this
+# package - see tests/upstream/README.md. Weekly, to catch a new upstream
+# release inside the pinned tag range; on PRs and pushes to main that touch
+# src/ or the suites themselves; and on demand.
+#
+# A matrix of 3 parallel jobs (not one job running all three in sequence):
+# each of axios' two strategies can, rarely, need its own multi-minute
+# split-and-retry pass over a cluster of genuinely slow tests (real,
+# multi-second delays by test design - see run.mjs's header comment), which
+# would add up past a single job's timeout if serialized. In parallel, each
+# keeps its own budget without affecting the others.
+on:
+  pull_request:
+    branches: [main, claude/v1.0.0]
+    paths:
+      - 'src/**'
+      - 'tests/upstream/**'
+      - '.github/workflows/upstream.yml'
+  # On main too, so the README badge reflects the released code.
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/upstream/**'
+      - '.github/workflows/upstream.yml'
+  workflow_dispatch:
+  schedule:
+    # Weekly, to catch new @nestjs/axios/axios releases within the pinned tags.
+    - cron: '41 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: '@nestjs/axios'
+            run: npm run test:upstream:nestjs
+          - name: 'axios (axiosRef as the instance)'
+            run: node tests/upstream/axios/run.mjs --strategy a
+          - name: 'axios (our transport as an adapter)'
+            run: node tests/upstream/axios/run.mjs --strategy b
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Keyed on the two run.mjs files: bumping a pinned tag changes their
+      # content, which busts the cache automatically.
+      - name: Cache upstream clones
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/conformance-clones
+          key: upstream-clones-${{ hashFiles('tests/upstream/nestjs-axios/run.mjs', 'tests/upstream/axios/run.mjs') }}
+
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.run }}
+        env:
+          CONFORMANCE_CLONE_ROOT: ${{ runner.temp }}/conformance-clones

@@ -1,0 +1,90 @@
+/**
+ * API Extractor config: freezes the public API surface (plan.md phase 3
+ * "Trim the public API, then commit an api-extractor report and check it in
+ * CI"). Runs against the *built* `lib/index.d.ts` (see `npm run api:check`/
+ * `api:update` in package.json), so it always reflects what a consumer
+ * actually imports - not `src/`, which api-extractor can't read directly
+ * (it needs a single rolled-up-looking `.d.ts` entry point).
+ *
+ * https://api-extractor.com/pages/setup/configure_api_report/
+ */
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+
+  "mainEntryPointFilePath": "<projectFolder>/lib/index.d.ts",
+  "bundledPackages": [],
+
+  "compiler": {
+    "tsconfigFilePath": "<projectFolder>/tsconfig.build.json"
+  },
+
+  // The API report (etc/nestjs-axios-undici.api.md) is the whole point here:
+  // a diffable, committed snapshot of every exported name and signature.
+  // `api:check` fails when the freshly-generated report (written to
+  // reportTempFolder) differs from the committed one.
+  "apiReport": {
+    "enabled": true,
+    "reportFileName": "nestjs-axios-undici",
+    "reportFolder": "<projectFolder>/etc/",
+    "reportTempFolder": "<projectFolder>/temp/"
+  },
+
+  // Neither is needed: this package doesn't publish a doc model (no
+  // generated API documentation site) or a separate rolled-up .d.ts
+  // (`lib/index.d.ts`, produced by `tsc`, already is the public entry
+  // point's types).
+  "docModel": {
+    "enabled": false
+  },
+  "dtsRollup": {
+    "enabled": false
+  },
+  "tsdocMetadata": {
+    "enabled": false
+  },
+
+  "messages": {
+    "compilerMessageReporting": {
+      "default": {
+        "logLevel": "warning"
+      }
+    },
+    "extractorMessageReporting": {
+      "default": {
+        "logLevel": "warning"
+      },
+      // This package doesn't use api-extractor's `@public`/`@beta`/`@alpha`/
+      // `@internal` release-tag convention - every exported name is simply
+      // "the current public API", the whole surface this trim item exists to
+      // curate deliberately (see src/index.ts and each modules/http/*/
+      // index.ts). Tagging every exported symbol `@public` just to silence
+      // this would be pure noise with no information content, so it's
+      // disabled outright rather than satisfied mechanically.
+      "ae-missing-release-tag": {
+        "logLevel": "none"
+      }
+      // ae-forgotten-export stays at the default (warning -> fails
+      // `api:check`, since the CLI runs without --local): a name reachable
+      // from a public signature that isn't itself exported is a real gap in
+      // "explicit named exports" (see src/index.ts's doc comment), not
+      // noise - e.g. it's what caught `UndiciURLType`/`CookieJarOption`/
+      // `BeforeRedirectFn`/`UndiciRequestOptionsType` needing to stay
+      // exported (they're reachable from `HttpInterceptorRequest.url`/
+      // `HttpModuleOptions.cookieJar`/`.beforeRedirect`/`HttpService.
+      // undiciRef` respectively) while this trim was written.
+    },
+    // This codebase's doc comments are deliberately prose (long explanatory
+    // comments with `>`/backtick/`@`-heavy Markdown-ish text throughout
+    // src/), not comments hand-written to strict TSDoc syntax - and no doc
+    // model/API documentation site is generated from them (`docModel.enabled`
+    // is false above), so TSDoc's own syntax strictness (unescaped `>`,
+    // an unclosed code-span backtick, a `@param` with no trailing hyphen, ...)
+    // has nothing to protect here. Silenced instead of reformatting every
+    // comment in the codebase to satisfy a parser nothing else reads.
+    "tsdocMessageReporting": {
+      "default": {
+        "logLevel": "none"
+      }
+    }
+  }
+}

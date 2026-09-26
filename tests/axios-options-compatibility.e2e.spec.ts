@@ -41,7 +41,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       } else if (url === '/login') {
         res.writeHead(200, {
           'Content-Type': 'application/json',
-          'Set-Cookie': 'sessionid=abc123; Path=/; Domain=localhost; HttpOnly',
+          'Set-Cookie': 'sessionid=abc123; Path=/; HttpOnly',
         });
         res.end(JSON.stringify({ success: true }));
       } else if (url === '/profile') {
@@ -60,7 +60,7 @@ describe('Axios Options Compatibility - Fixed', () => {
     });
 
     await new Promise<void>(resolve => {
-      server.listen(0, () => {
+      server.listen(0, '127.0.0.1', () => {
         serverPort = (server.address() as any).port;
         resolve();
       });
@@ -104,7 +104,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       const promises = Array(3)
         .fill(null)
         .map(() =>
-          lastValueFrom(httpService.get(`http://localhost:${serverPort}/test`)),
+          lastValueFrom(httpService.get(`http://127.0.0.1:${serverPort}/test`)),
         );
 
       const responses = await Promise.all(promises);
@@ -139,7 +139,7 @@ describe('Axios Options Compatibility - Fixed', () => {
 
     it('should reject responses exceeding maxContentLength', async () => {
       await expect(
-        lastValueFrom(httpService.get(`http://localhost:${serverPort}/large`)),
+        lastValueFrom(httpService.get(`http://127.0.0.1:${serverPort}/large`)),
       ).rejects.toThrow(/maxContentLength/);
     });
 
@@ -148,14 +148,14 @@ describe('Axios Options Compatibility - Fixed', () => {
 
       await expect(
         lastValueFrom(
-          httpService.post(`http://localhost:${serverPort}/upload`, largeBody),
+          httpService.post(`http://127.0.0.1:${serverPort}/upload`, largeBody),
         ),
       ).rejects.toThrow(/maxBodyLength/);
     });
 
     it('should accept responses within limits', async () => {
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/small`),
+        httpService.get(`http://127.0.0.1:${serverPort}/small`),
       );
 
       expect(response.data).toBe('x'.repeat(50));
@@ -163,7 +163,7 @@ describe('Axios Options Compatibility - Fixed', () => {
     });
   });
 
-  describe('withCredentials - Cookie Handling', () => {
+  describe('withCredentials - no-op (matches axios on Node.js)', () => {
     beforeEach(async () => {
       const moduleRef = await Test.createTestingModule({
         imports: [
@@ -178,22 +178,28 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
     });
 
-    it('should store and send cookies across requests', async () => {
+    it('does not store or send cookies across requests', async () => {
       // First request sets a cookie
       const loginResponse = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/login`),
+        httpService.get(`http://127.0.0.1:${serverPort}/login`),
       );
       expect(loginResponse.data.success).toBe(true);
 
-      // Second request should include the cookie
+      // Second request must NOT include the cookie: axios ignores
+      // `withCredentials` on Node.js, and so does this library now
+      // (plan.md phase 2: "breaking: withCredentials becomes a no-op; add
+      // cookieJar").
       const profileResponse = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/profile`),
+        httpService.get(`http://127.0.0.1:${serverPort}/profile`),
       );
 
       expect(profileResponse.data.name).toBe('John');
-      expect(profileResponse.data.authenticated).toBe(true);
+      expect(profileResponse.data.authenticated).toBe(false);
     });
   });
+
+  // `cookieJar` (the opt-in replacement for `withCredentials`'s old cookie
+  // handling) has its own tests: tests/transport-cookie-jar.e2e.spec.ts.
 
   describe('Combined Options', () => {
     it('should support multiple axios options simultaneously', async () => {
@@ -214,7 +220,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`),
+        httpService.get(`http://127.0.0.1:${serverPort}/test`),
       );
 
       expect(response.data).toEqual({ data: 'test' });
@@ -237,14 +243,14 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`),
+        httpService.get(`http://127.0.0.1:${serverPort}/test`),
       );
 
       expect(response.data).toEqual({ data: 'test' });
       expect(response.status).toBe(200);
     });
 
-    it('should support withCredentials with other options', async () => {
+    it('should support withCredentials with other options (accepted, still a no-op)', async () => {
       const moduleRef = await Test.createTestingModule({
         imports: [
           HttpModule.register({
@@ -260,7 +266,7 @@ describe('Axios Options Compatibility - Fixed', () => {
       httpService = moduleRef.get<HttpService>(HttpService);
 
       const response = await lastValueFrom(
-        httpService.get(`http://localhost:${serverPort}/test`),
+        httpService.get(`http://127.0.0.1:${serverPort}/test`),
       );
 
       expect(response.data).toEqual({ data: 'test' });

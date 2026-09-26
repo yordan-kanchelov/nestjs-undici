@@ -2,15 +2,18 @@ import http from 'k6/http';
 import { check } from 'k6';
 import { Rate, Trend, Counter } from 'k6/metrics';
 
-// Services under test. `port` is the offset from the Node version's port base
+// Services under test: one shared app (benchmarks/apps/nestjs-app) built per
+// CLIENT/PLATFORM/INTERCEPTOR, plus the raw-undici floor (apps/undici-raw).
+// `port` is the offset from the Node version's port base
 // (Node 22: 3010, Node 24: 3020, Node 26: 3030).
 export const SERVICES = [
-  { key: 'express_axios', label: 'Express+Axios', exec: 'testExpressAxios', port: 4, tag: 'express-axios', startTime: '0s' },
-  { key: 'fastify_axios', label: 'Fastify+Axios', exec: 'testFastifyAxios', port: 2, tag: 'fastify-axios', startTime: '1m15s' },
-  { key: 'fastify_undici', label: 'Fastify+Undici', exec: 'testFastifyUndici', port: 3, tag: 'fastify-undici', startTime: '2m30s' },
-  { key: 'express_axios_interceptor', label: 'Express+Axios+Interceptor', exec: 'testExpressAxiosInterceptor', port: 5, tag: 'express-axios-interceptor', startTime: '3m45s' },
-  { key: 'fastify_axios_interceptor', label: 'Fastify+Axios+Interceptor', exec: 'testFastifyAxiosInterceptor', port: 6, tag: 'fastify-axios-interceptor', startTime: '5m00s' },
-  { key: 'fastify_undici_interceptor', label: 'Fastify+Undici+Interceptor', exec: 'testFastifyUndiciInterceptor', port: 7, tag: 'fastify-undici-interceptor', startTime: '6m15s' },
+  { key: 'express_axios', label: 'Express + @nestjs/axios', exec: 'testExpressAxios', port: 2, tag: 'express-axios', startTime: '0s' },
+  { key: 'express_undici', label: 'Express + nestjs-axios-undici', exec: 'testExpressUndici', port: 3, tag: 'express-undici', startTime: '1m15s' },
+  { key: 'fastify_axios', label: 'Fastify + @nestjs/axios', exec: 'testFastifyAxios', port: 4, tag: 'fastify-axios', startTime: '2m30s' },
+  { key: 'fastify_undici', label: 'Fastify + nestjs-axios-undici', exec: 'testFastifyUndici', port: 5, tag: 'fastify-undici', startTime: '3m45s' },
+  { key: 'express_axios_interceptor', label: 'Express + @nestjs/axios + interceptor', exec: 'testExpressAxiosInterceptor', port: 6, tag: 'express-axios-interceptor', startTime: '5m00s' },
+  { key: 'express_undici_interceptor', label: 'Express + nestjs-axios-undici + interceptor', exec: 'testExpressUndiciInterceptor', port: 7, tag: 'express-undici-interceptor', startTime: '6m15s' },
+  { key: 'undici_raw', label: 'Raw undici (floor)', exec: 'testUndiciRaw', port: 8, tag: 'undici-raw', startTime: '7m30s' },
 ];
 
 const STAGES = [
@@ -30,6 +33,18 @@ export function createBenchmark({ nodeVersion, portBase }) {
   const metrics = {};
   const tests = {};
   const scenarios = {};
+
+  // Run the services in a shuffled order each time, so neither client is
+  // always measured first (or last) on a warming or throttling machine.
+  const order = SERVICES.slice();
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const slot = {};
+  order.forEach((service, i) => {
+    slot[service.key] = SERVICES[i].startTime;
+  });
 
   for (const service of SERVICES) {
     const m = {
@@ -67,7 +82,7 @@ export function createBenchmark({ nodeVersion, portBase }) {
       startVUs: 0,
       stages: STAGES,
       exec: service.exec,
-      startTime: service.startTime,
+      startTime: slot[service.key],
     };
   }
 
@@ -194,13 +209,14 @@ function buildSummary(data, nodeVersion) {
     },
     results,
     comparison: {
-      fastify_axios_vs_express_axios: comparison(results, 'express_axios', 'fastify_axios'),
-      fastify_undici_vs_express_axios: comparison(results, 'express_axios', 'fastify_undici'),
+      // The two primary pairs: same framework, only the HTTP client changes.
+      express_undici_vs_express_axios: comparison(results, 'express_axios', 'express_undici'),
       fastify_undici_vs_fastify_axios: comparison(results, 'fastify_axios', 'fastify_undici'),
+      // Adapter cost: nestjs-axios-undici's HttpService against raw undici.
+      express_undici_vs_undici_raw: comparison(results, 'undici_raw', 'express_undici'),
       interceptor_overhead: {
         express_axios: interceptorOverhead(results, 'express_axios'),
-        fastify_axios: interceptorOverhead(results, 'fastify_axios'),
-        fastify_undici: interceptorOverhead(results, 'fastify_undici'),
+        express_undici: interceptorOverhead(results, 'express_undici'),
       },
     },
   };

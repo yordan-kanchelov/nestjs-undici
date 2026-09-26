@@ -3,7 +3,15 @@
   "compilerOptions": {
     "noEmit": false,
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    // `strict` for the published build only (plan.md phase 2 "types: axios
+    // interop" / phase 3 "`strict` TypeScript in tsconfig.build.json").
+    // `tsconfig.json` (editor/ts-jest/`npm run typecheck`, src+tests) stays
+    // loose: turning `strict` on there too surfaced failures in test
+    // fixtures unrelated to this item's scope (implicit-any callback params,
+    // possibly-undefined mock helpers, ...) that are worth fixing on their
+    // own, not as a side effect of this build-only flip.
+    "strict": true
   },
   "include": ["src"],
   "exclude": ["src/**/__tests__", "src/**/*.spec.ts"]

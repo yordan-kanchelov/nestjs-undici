@@ -1,6 +1,8 @@
 import fastify from 'fastify';
 
-const app = fastify({ logger: true });
+// logger: false - per-request logging on the mock backend caps its own
+// throughput and would show up as noise in every configuration's numbers.
+const app = fastify({ logger: false });
 
 const mockData = {
   id: Math.floor(Math.random() * 10000),

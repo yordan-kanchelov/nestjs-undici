@@ -24,5 +24,9 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests"],
+  // tests/types is a separate, --strict, compile-only project against the
+  // built package (see tests/types/tsconfig.json / `npm run typecheck:compat`),
+  // kept out of both this loose typecheck and Jest.
+  "exclude": ["tests/types"]
 }

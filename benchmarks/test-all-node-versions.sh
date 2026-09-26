@@ -80,12 +80,13 @@ check_all_services() {
     echo "----------------------------------------"
 
     check_service_health "Mock Service" "http://localhost:$((BASE + 1))/api/data" || ALL_HEALTHY=false
-    check_service_health "Fastify+Axios" "http://localhost:$((BASE + 2))/api" || ALL_HEALTHY=false
-    check_service_health "Fastify+Undici" "http://localhost:$((BASE + 3))/api" || ALL_HEALTHY=false
-    check_service_health "Express+Axios" "http://localhost:$((BASE + 4))/api" || ALL_HEALTHY=false
-    check_service_health "Express+Axios+Interceptor" "http://localhost:$((BASE + 5))/api" || ALL_HEALTHY=false
-    check_service_health "Fastify+Axios+Interceptor" "http://localhost:$((BASE + 6))/api" || ALL_HEALTHY=false
-    check_service_health "Fastify+Undici+Interceptor" "http://localhost:$((BASE + 7))/api" || ALL_HEALTHY=false
+    check_service_health "Express + @nestjs/axios" "http://localhost:$((BASE + 2))/api" || ALL_HEALTHY=false
+    check_service_health "Express + nestjs-axios-undici" "http://localhost:$((BASE + 3))/api" || ALL_HEALTHY=false
+    check_service_health "Fastify + @nestjs/axios" "http://localhost:$((BASE + 4))/api" || ALL_HEALTHY=false
+    check_service_health "Fastify + nestjs-axios-undici" "http://localhost:$((BASE + 5))/api" || ALL_HEALTHY=false
+    check_service_health "Express + @nestjs/axios + interceptor" "http://localhost:$((BASE + 6))/api" || ALL_HEALTHY=false
+    check_service_health "Express + nestjs-axios-undici + interceptor" "http://localhost:$((BASE + 7))/api" || ALL_HEALTHY=false
+    check_service_health "Raw undici (floor)" "http://localhost:$((BASE + 8))/api" || ALL_HEALTHY=false
 
     if [ "$ALL_HEALTHY" = true ]; then
         echo -e "${GREEN}All services are healthy!${NC}"
@@ -185,12 +186,14 @@ for NODE_VERSION in "${NODE_VERSIONS[@]}"; do
     fi
 done
 
-# Generate comparison report if script exists
+# Generate the docs page and both README headlines from the results just produced
 if [ -f "generate-comparison-report.js" ]; then
     echo "======================================"
-    echo "Generating Comparison Report"
+    echo "Generating Docs Page and Headlines"
     echo "======================================"
-    node generate-comparison-report.js
+    node generate-comparison-report.js --docs ../docs/benchmarks.md
+    node generate-comparison-report.js --headline ../README.md
+    node generate-comparison-report.js --headline README.md
     echo ""
 fi
 
@@ -200,7 +203,7 @@ echo "Available Results"
 echo "======================================"
 echo ""
 
-for file in results/*.json results/*.csv results/*.md; do
+for file in results/*.json results/*.csv; do
     if [ -f "$file" ]; then
         echo "✓ $(basename "$file")"
     fi
@@ -211,5 +214,4 @@ echo "======================================"
 echo "All tests completed!"
 echo "======================================"
 echo ""
-echo "View detailed results in the 'results' directory"
-echo "Main report: results/PERFORMANCE-COMPARISON-REPORT.md"
+echo "Raw results are in the 'results' directory; the generated report is docs/benchmarks.md"

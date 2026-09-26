@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '../http.service';
 import { HttpModule } from '../../http.module';
+import { AxiosHeaders } from '../../interfaces/axios-headers';
 import * as http from 'http';
 import { AddressInfo } from 'net';
 import { firstValueFrom } from 'rxjs';
@@ -13,9 +14,9 @@ describe('HttpService Convenience Methods', () => {
   const createMockServer = (handler: http.RequestListener): Promise<string> => {
     return new Promise(resolve => {
       mockServer = http.createServer(handler);
-      mockServer.listen(0, 'localhost', () => {
+      mockServer.listen(0, '127.0.0.1', () => {
         const port = (mockServer.address() as AddressInfo).port;
-        resolve(`http://localhost:${port}`);
+        resolve(`http://127.0.0.1:${port}`);
       });
     });
   };
@@ -168,19 +169,25 @@ describe('HttpService Convenience Methods', () => {
   });
 
   describe('Form methods', () => {
+    // postForm/putForm/patchForm send multipart/form-data by default, like
+    // axios' own postForm (plan.md phase 2 "feat(axiosRef): make it a real
+    // axios instance") - previously (a documented gap) this library sent
+    // url-encoded data instead. `post()`/`put()`/`patch()` with
+    // `data: new URLSearchParams(...)` still sends url-encoded, unaffected.
     it('should make POST request with form data', async () => {
       const formData = { username: 'john', password: 'secret' };
 
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('POST');
-        expect(req.headers['content-type']).toBe(
-          'application/x-www-form-urlencoded',
-        );
+        expect(req.headers['content-type']).toMatch(/^multipart\/form-data;/);
 
         let body = '';
         req.on('data', chunk => (body += chunk));
         req.on('end', () => {
-          expect(body).toBe('username=john&password=secret');
+          expect(body).toContain('name="username"');
+          expect(body).toContain('john');
+          expect(body).toContain('name="password"');
+          expect(body).toContain('secret');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true }));
         });
@@ -197,14 +204,15 @@ describe('HttpService Convenience Methods', () => {
 
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PUT');
-        expect(req.headers['content-type']).toBe(
-          'application/x-www-form-urlencoded',
-        );
+        expect(req.headers['content-type']).toMatch(/^multipart\/form-data;/);
 
         let body = '';
         req.on('data', chunk => (body += chunk));
         req.on('end', () => {
-          expect(body).toBe('id=123&name=updated%20name');
+          expect(body).toContain('name="id"');
+          expect(body).toContain('123');
+          expect(body).toContain('name="name"');
+          expect(body).toContain('updated name');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ updated: true }));
         });
@@ -221,9 +229,7 @@ describe('HttpService Convenience Methods', () => {
 
       serverUrl = await createMockServer((req, res) => {
         expect(req.method).toBe('PATCH');
-        expect(req.headers['content-type']).toBe(
-          'application/x-www-form-urlencoded',
-        );
+        expect(req.headers['content-type']).toMatch(/^multipart\/form-data;/);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ patched: true }));
       });
@@ -275,6 +281,43 @@ describe('HttpService Convenience Methods', () => {
         ),
       );
       expect(response.data.success).toBe(true);
+    });
+  });
+
+  describe('axiosRef review fixes', () => {
+    it('postForm with URLSearchParams sends its body', async () => {
+      let received = '';
+      serverUrl = await createMockServer((req, res) => {
+        req.on('data', chunk => (received += chunk));
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('{}');
+        });
+      });
+
+      await service.axiosRef.postForm(
+        serverUrl,
+        new URLSearchParams({ a: '1', b: '2' }),
+      );
+      expect(received).toBe('a=1&b=2');
+    });
+
+    it('create() copies object defaults instead of sharing them', () => {
+      service.axiosRef.defaults.params = { a: 1 };
+      try {
+        const child = service.axiosRef.create();
+        (service.axiosRef.defaults.params as any).a = 999;
+        expect((child.defaults.params as any).a).toBe(1);
+      } finally {
+        delete service.axiosRef.defaults.params;
+      }
+    });
+
+    it('AxiosHeaders has the Accept-Encoding accessors axios has at runtime', () => {
+      const headers = new AxiosHeaders() as any;
+      headers.setAcceptEncoding('gzip');
+      expect(headers.getAcceptEncoding()).toBe('gzip');
+      expect(headers.hasAcceptEncoding()).toBe(true);
     });
   });
 });

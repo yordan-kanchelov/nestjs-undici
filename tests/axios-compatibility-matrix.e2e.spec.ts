@@ -264,14 +264,18 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
-    it('documented difference: postForm(url, object) is url-encoded (axios: multipart)', async () => {
-      const response = await firstValueFrom(
-        undiciService.postForm(`${base}/echo`, { a: 1, b: 'x y' }),
-      );
-      expect(echo(response)).toMatchObject({
-        contentType: 'application/x-www-form-urlencoded',
-        body: 'a=1&b=x%20y',
+    it('postForm(url, object) is multipart, matching axios (fixed: plan.md phase 2 "feat(axiosRef): make it a real axios instance")', async () => {
+      const [a, u] = await both(async s => {
+        const result = echo(
+          await first(s.postForm(`${base}/echo`, { a: 1, b: 'x y' })),
+        );
+        return {
+          contentType: result.contentType.split(';')[0],
+          hasA: result.body.includes('name="a"'),
+          hasB: result.body.includes('name="b"'),
+        };
       });
+      expect(u).toEqual(a);
     });
   });
 
@@ -420,11 +424,11 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
-    it('documented difference: redirects are not followed unless maxRedirects is set (axios default: 21)', async () => {
-      const error = await errorOf(
-        firstValueFrom(undiciService.get(`${base}/redirect`)),
+    it('redirects are followed by default, like axios (up to 21)', async () => {
+      const [a, u] = await both(async s =>
+        echo(await first(s.get(`${base}/redirect`))),
       );
-      expect(error.response.status).toBe(302);
+      expect(u).toEqual(a);
     });
 
     it.each(['text', 'arraybuffer', 'json'] as const)(
@@ -489,6 +493,42 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
+    /**
+     * plan.md phase 2 (investigate: axios' "should able to cancel multiple
+     * requests with CancelToken" upstream test) - root-caused: that upstream
+     * test fails deterministically, in every environment including real CI
+     * (confirmed against a GitHub Actions job log), because it calls
+     * `axios.CancelToken.source()` where `axios` is *this library's own*
+     * `axiosRef` (the upstream harness's strategy-(a) shim) - and
+     * `axiosRef.CancelToken` (the legacy top-level class) was deliberately
+     * dropped in the API trim (axios itself deprecates it in favour of
+     * `AbortSignal`; the *shape*-level `config.cancelToken` support this
+     * test actually exercises was never touched). Not a cancellation bug -
+     * this test pins the real scenario (5 concurrent requests sharing one
+     * `cancelToken`, cancelled synchronously right after they start) using
+     * the real `axios` package's `CancelToken` (this file's own top-level
+     * import) as the token source, which both services accept.
+     */
+    it('cancels multiple in-flight requests sharing one cancelToken', async () => {
+      const [a, u] = await both(async s => {
+        const source = axios.CancelToken.source();
+        const canceled: number[] = [];
+        const requests = [1, 2, 3, 4, 5].map(async id => {
+          try {
+            await first(s.get(`${base}/slow`, { cancelToken: source.token }));
+          } catch (error: any) {
+            if (!axios.isCancel(error)) throw error;
+            canceled.push(id);
+          }
+        });
+        source.cancel('Aborted by user');
+        await Promise.all(requests);
+        return canceled.sort();
+      });
+      expect(u).toEqual([1, 2, 3, 4, 5]);
+      expect(u).toEqual(a);
+    });
+
     it('timeout rejects with ECONNABORTED and the axios message', async () => {
       const error = await errorOf(
         firstValueFrom(undiciService.get(`${base}/slow`, { timeout: 200 })),
@@ -527,24 +567,28 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
-    it('documented difference: JSON is only parsed for JSON content types (axios parses any string)', async () => {
-      const { data } = await firstValueFrom(
-        undiciService.get(`${base}/text-json`),
+    it('JSON-looking strings are parsed regardless of content type, like axios', async () => {
+      const [a, u] = await both(
+        async s => (await first(s.get(`${base}/text-json`))).data,
       );
-      expect(data).toBe('{"a":1}');
+      expect(u).toEqual(a);
+      expect(u).toEqual({ a: 1 });
     });
 
-    it('documented difference: unknown binary content types are Buffers (axios: utf8 string)', async () => {
-      const { data } = await firstValueFrom(undiciService.get(`${base}/octet`));
-      expect(Buffer.isBuffer(data)).toBe(true);
+    it('unknown/text-ish content types decode to a UTF-8 string, like axios', async () => {
+      const [a, u] = await both(
+        async s => (await first(s.get(`${base}/octet`))).data,
+      );
+      expect(u).toEqual(a);
+      expect(u).toBe('hello');
     });
 
-    it('documented difference: gzip responses are not decompressed', async () => {
-      const [{ data: axiosData }, { data: undiciData }] = await both(s =>
-        first(s.get(`${base}/gzip`)),
+    it('gzip responses are decompressed, like axios', async () => {
+      const [a, u] = await both(s =>
+        first(s.get(`${base}/gzip`)).then(r => r.data),
       );
-      expect(axiosData).toEqual({ zipped: true });
-      expect(undiciData).not.toEqual({ zipped: true });
+      expect(u).toEqual(a);
+      expect(u).toEqual({ zipped: true });
     });
 
     it('documented difference: response.headers is a plain object (no .get())', async () => {
@@ -557,7 +601,8 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         undiciService.get(`${base}/echo`, { headers: { 'X-A': '1' } }),
       );
       expect(response.config.url).toBe(`${base}/echo`);
-      expect(response.config.method).toBe('GET');
+      // `config.method` is always lower-case, matching axios.
+      expect(response.config.method).toBe('get');
       expect(response.config.headers).toMatchObject({ 'X-A': '1' });
     });
   });
@@ -607,11 +652,15 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(isCancel(canceled)).toBe(true);
     });
 
-    it('documented difference: not an instance of the axios package AxiosError class', async () => {
+    it('is an instance of the axios package AxiosError class when axios is installed (optional peer)', async () => {
+      // Fixed by plan.md phase 2 "types: axios interop" - `axios` is now an
+      // optional peer, and this package links its own AxiosError's
+      // prototype onto axios' own AxiosError (lazily, at module load) when
+      // axios is present, so `instanceof axios.AxiosError` holds too.
       const error = await errorOf(
         firstValueFrom(undiciService.get(`${base}/status?code=400`)),
       );
-      expect(error instanceof axios.AxiosError).toBe(false);
+      expect(error instanceof axios.AxiosError).toBe(true);
       expect(axios.isAxiosError(error)).toBe(true);
     });
   });
@@ -634,6 +683,32 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(u).toEqual(a);
     });
 
+    it('default Accept/User-Agent headers can be overridden at runtime, the axios way', async () => {
+      const [a, u] = await both(async s => {
+        const beforeHeaders = (await first(s.get(`${base}/echo`))).data.headers;
+        s.axiosRef.defaults.headers.common['User-Agent'] = 'my-test-agent/9.9';
+        s.axiosRef.defaults.headers.common['Accept'] = 'application/xml';
+        try {
+          const afterHeaders = (await first(s.get(`${base}/echo`))).data
+            .headers;
+          return {
+            hadDefaultsBefore: {
+              accept: !!beforeHeaders.accept,
+              userAgent: !!beforeHeaders['user-agent'],
+            },
+            userAgent: afterHeaders['user-agent'],
+            accept: afterHeaders.accept,
+          };
+        } finally {
+          delete s.axiosRef.defaults.headers.common['User-Agent'];
+          delete s.axiosRef.defaults.headers.common['Accept'];
+        }
+      });
+      expect(u).toEqual(a);
+      expect(u.userAgent).toBe('my-test-agent/9.9');
+      expect(u.accept).toBe('application/xml');
+    });
+
     it('promise methods: get/post/request', async () => {
       const [a, u] = await both(async s => [
         echo(await s.axiosRef.get(`${base}/echo`)),
@@ -647,6 +722,100 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         ),
       ]);
       expect(u).toEqual(a);
+    });
+
+    /**
+     * CodeRabbit review finding: `axiosRef(config)` overload detection used
+     * to require a `url` key on `config` to recognise the `axiosRef(config)`
+     * call form - a config with `baseURL` but no `url` (perfectly valid
+     * axios usage) fell through to the "this is a raw URL" branch instead
+     * and got stringified to `"[object Object]"`.
+     */
+    it('axiosRef({ baseURL, method }) with no url key hits baseURL directly, like real axios', async () => {
+      const [a, u] = await both(async s =>
+        echo(await s.axiosRef({ baseURL: `${base}/echo`, method: 'get' })),
+      );
+      expect(u).toEqual(a);
+      expect(u.url).toBe('/echo');
+      expect(u.method).toBe('GET');
+    });
+
+    it('axiosRef({ method }) with no url/baseURL at all: a request interceptor that sets config.url still works', async () => {
+      const [a, u] = await both(async s => {
+        const id = s.axiosRef.interceptors.request.use((config: any) => {
+          config.url = `${base}/echo`;
+          return config;
+        });
+        try {
+          return echo(await s.axiosRef({ method: 'get' }));
+        } finally {
+          s.axiosRef.interceptors.request.eject(id);
+        }
+      });
+      expect(u).toEqual(a);
+      expect(u.url).toBe('/echo');
+    });
+
+    /**
+     * CodeRabbit review finding: `axiosRef.create(config)` merged `config`
+     * onto module options for `baseURL`/`timeout`/`maxRedirects`/headers/...
+     * but silently dropped `auth`, `maxContentLength`, `maxBodyLength`,
+     * `timeoutErrorMessage`, `decompress`, `socketPath`, `allowAbsoluteUrls`
+     * and `beforeRedirect` - `create({ auth })` sent no credentials, and
+     * `create({ maxContentLength })` enforced nothing, because
+     * `normalizeAxiosRequest`/`buildAxiosConfig` only ever read those off
+     * module/instance options, never off the child instance's own
+     * `defaults`.
+     */
+    it('axiosRef.create({ auth }) sends Basic auth, like real axios', async () => {
+      const [a, u] = await both(async s => {
+        const child = s.axiosRef.create({
+          auth: { username: 'alice', password: 'secret' },
+        });
+        return echo(await child.get(`${base}/echo`));
+      });
+      expect(u).toEqual(a);
+      expect(u.authorization).toBe(
+        `Basic ${Buffer.from('alice:secret').toString('base64')}`,
+      );
+    });
+
+    it('axiosRef.create({ maxContentLength }) enforces the limit on that child instance', async () => {
+      const [a, u] = await both(async s => {
+        const child = s.axiosRef.create({ maxContentLength: 5 });
+        return errorOf(child.get(`${base}/echo`));
+      });
+      expect(describeError(u)).toEqual(describeError(a));
+      expect(u.code).toBe('ERR_BAD_RESPONSE');
+      expect(u.message).toBe('maxContentLength size of 5 exceeded');
+    });
+
+    it('a runtime axiosRef.defaults.maxContentLength assignment (no create()) is also honoured', async () => {
+      const [a, u] = await both(async s => {
+        s.axiosRef.defaults.maxContentLength = 5;
+        try {
+          return await errorOf(s.axiosRef.get(`${base}/echo`));
+        } finally {
+          delete s.axiosRef.defaults.maxContentLength;
+        }
+      });
+      expect(describeError(u)).toEqual(describeError(a));
+      expect(u.code).toBe('ERR_BAD_RESPONSE');
+    });
+
+    it("axiosRef.create({ beforeRedirect }) is called on that child instance's redirects", async () => {
+      const [a, u] = await both(async s => {
+        const seen: string[] = [];
+        const child = s.axiosRef.create({
+          beforeRedirect: (options: any) => {
+            seen.push(options.path);
+          },
+        });
+        await child.get(`${base}/redirect`);
+        return seen;
+      });
+      expect(u).toEqual(a);
+      expect(u).toEqual(['/echo/after-redirect']);
     });
 
     it('interceptors.request.eject and clear remove interceptors', async () => {
@@ -686,7 +855,7 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(response.data).toBe('{"status":404}');
     });
 
-    it('documented difference: request interceptors run FIFO (axios: LIFO) and response interceptors LIFO (axios: FIFO)', async () => {
+    it('axiosRef interceptors run in axios order: request LIFO, response FIFO', async () => {
       const service = (await compile([UndiciHttpModule.register({})])).get(
         UndiciHttpService,
       );
@@ -704,28 +873,43 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
         response => (order.push('res2'), response),
       );
       await firstValueFrom(service.get(`${base}/echo`));
-      expect(order).toEqual(['req1', 'req2', 'res2', 'res1']);
+      expect(order).toEqual(['req2', 'req1', 'res1', 'res2']);
     });
 
-    it('documented difference: unsubscribing does not abort the in-flight request', async () => {
-      let finished: boolean | undefined;
+    it('unsubscribing aborts the in-flight request (fixed: previously ran to completion)', async () => {
+      let resolveClosed!: (finished: boolean) => void;
+      const closed = new Promise<boolean>(resolve => {
+        resolveClosed = resolve;
+      });
       const slowServer = createServer((_req, res) => {
-        res.on('close', () => (finished = res.writableFinished));
-        setTimeout(() => res.end('done'), 300);
+        res.on('close', () => resolveClosed(res.writableFinished));
+        setTimeout(() => {
+          if (!res.writableEnded && !res.destroyed) res.end('done');
+        }, 300);
       });
       await new Promise<void>(resolve =>
         slowServer.listen(0, '127.0.0.1', resolve),
       );
       const url = `http://127.0.0.1:${(slowServer.address() as AddressInfo).port}/`;
+
+      // Wait for the connection to actually reach the server before
+      // unsubscribing, so the abort can't win the race against the socket
+      // ever being opened.
+      const started = new Promise<void>(resolve =>
+        slowServer.once('request', () => resolve()),
+      );
       const subscription = undiciService
         .get(url)
         .subscribe({ error: () => undefined });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await started;
       subscription.unsubscribe();
-      await new Promise(resolve => setTimeout(resolve, 400));
+
+      // Resolves once the server observes the connection close; the response
+      // must not have been written, since the client aborted before it.
+      expect(await closed).toBe(false);
+
       slowServer.closeAllConnections();
       await new Promise<void>(resolve => slowServer.close(() => resolve()));
-      expect(finished).toBe(true);
     });
   });
 
@@ -814,7 +998,7 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       expect(UndiciHttpModule.register({ global: true }).global).toBe(true);
     });
 
-    it('documented difference: transformRequest/transformResponse see serialized/parsed data (axios: raw data/raw string)', async () => {
+    it('transformRequest/transformResponse see raw data/raw string, like axios', async () => {
       const seen: Record<string, unknown[]> = { axios: [], undici: [] };
       const options = (key: string) => ({
         transformRequest: [
@@ -833,10 +1017,12 @@ describe('Axios compatibility matrix (@nestjs/axios vs nestjs-axios-undici)', ()
       ).get(UndiciHttpService);
       await firstValueFrom(axiosModuleService.post(`${base}/echo`, { a: 1 }));
       await firstValueFrom(undiciModuleService.post(`${base}/echo`, { a: 1 }));
+      // transformRequest gets the raw, unserialised data (an object)...
       expect(seen.axios[0]).toEqual({ a: 1 });
-      expect(seen.undici[0]).toBe('{"a":1}');
+      expect(seen.undici[0]).toEqual({ a: 1 });
+      // ...and transformResponse gets the raw, unparsed body (a string).
       expect(typeof seen.axios[1]).toBe('string');
-      expect(typeof seen.undici[1]).toBe('object');
+      expect(typeof seen.undici[1]).toBe('string');
     });
 
     it('options(url, config) (not available in @nestjs/axios)', async () => {

@@ -12,13 +12,32 @@ permissions:
 
 jobs:
   test:
-    name: Test (Node ${{ matrix.node-version }})
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        node-version: [22, 24, 26]
+        include:
+          # The lockfile: NestJS 12, @nestjs/axios 12, undici 7. Lint, types,
+          # formatting, coverage and the examples run once, here.
+          - name: Node 24 / Nest 12 / undici 7 (full checks + coverage)
+            node-version: 24
+            full: true
+          - name: Node 26 / Nest 12 / undici 7
+            node-version: 26
+          # The other supported undici major
+          - name: Node 24 / Nest 12 / undici 8
+            node-version: 24
+            overlay: undici@8
+          # Jest can only load the ESM-only NestJS 12 packages on Node >= 24.9,
+          # so Node 22 runs the suite against the older CommonJS Nest majors.
+          - name: Node 22 / Nest 11 / undici 7
+            node-version: 22
+            overlay: '@nestjs/common@11 @nestjs/core@11 @nestjs/testing@11 @nestjs/platform-express@11 @nestjs/axios@4'
+          - name: Node 22 / Nest 10 / undici 7
+            node-version: 22
+            overlay: '@nestjs/common@10 @nestjs/core@10 @nestjs/testing@10 @nestjs/platform-express@10 @nestjs/axios@3'
 
     steps:
       - uses: actions/checkout@v4
@@ -32,18 +51,43 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install ${{ matrix.overlay }}
+        if: matrix.overlay
+        run: npm install --no-save $OVERLAY
+        env:
+          OVERLAY: ${{ matrix.overlay }}
+
+      - name: Show resolved versions
+        # `npm ls` exits non-zero when an overlay doesn't match package.json
+        run: npm ls @nestjs/common @nestjs/core @nestjs/testing @nestjs/platform-express @nestjs/axios axios undici --depth=0 || true
+
       - name: Lint, typecheck and format check
+        if: matrix.full
         run: npm run lint && npm run typecheck && npm run format:check
 
-      - name: Unit and e2e tests
+      - name: Type-check drop-in compatibility with @nestjs/axios
+        if: matrix.full
+        run: npm run typecheck:compat
+
+      - name: Public API report is up to date (etc/nestjs-axios-undici.api.md)
+        if: matrix.full
+        run: npm run api:check
+
+      - name: Unit and e2e tests with coverage
+        if: matrix.full
         run: npm run test:cov
 
+      - name: Unit and e2e tests
+        if: ${{ !matrix.full }}
+        run: npm run test:jest
+
       - name: Examples
+        if: matrix.full
         run: npm run test:examples
         timeout-minutes: 10
 
       - name: Upload coverage to Codecov
-        if: matrix.node-version == 24
+        if: matrix.full
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

@@ -258,12 +258,12 @@ describe('HttpConfigModule in application context', () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      server.listen(0, 'localhost', async () => {
+      server.listen(0, '127.0.0.1', async () => {
         const port = (server.address() as any).port;
 
         try {
           const response = await lastValueFrom(
-            httpService.get(`http://localhost:${port}/data`),
+            httpService.get(`http://127.0.0.1:${port}/data`),
           );
 
           expect(response.data).toEqual({ success: true, data: 'test' });
@@ -310,12 +310,12 @@ describe('HttpConfigModule in application context', () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      server.listen(0, 'localhost', async () => {
+      server.listen(0, '127.0.0.1', async () => {
         const port = (server.address() as any).port;
 
         try {
           const response = await lastValueFrom(
-            httpService.get(`http://localhost:${port}/secure`, {
+            httpService.get(`http://127.0.0.1:${port}/secure`, {
               headers: {
                 Authorization: 'Bearer test-token',
                 'X-API-Key': 'secret',
@@ -368,12 +368,12 @@ describe('HttpConfigModule in application context', () => {
     });
 
     await new Promise<void>((resolve, reject) => {
-      server.listen(0, 'localhost', async () => {
+      server.listen(0, '127.0.0.1', async () => {
         const port = (server.address() as any).port;
 
         try {
           const response = await lastValueFrom(
-            httpService.post(`http://localhost:${port}/create`, requestBody),
+            httpService.post(`http://127.0.0.1:${port}/create`, requestBody),
           );
 
           expect(response.status).toBe(201);

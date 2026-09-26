@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>NestJS Axios Undici - Fast HTTP Client for NestJS</title>
+    <title>nestjs-axios-undici, the @nestjs/axios API on undici</title>
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
     <meta
       name="description"
-      content="nestjs-axios-undici - an Undici-based HTTP client for NestJS with interceptors, axios-compatible responses and a drop-in @nestjs/axios migration path."
+      content="The @nestjs/axios HttpModule and HttpService on undici. Change one import and your services, axios options, interceptors and error handling keep working."
     />
     <meta
       name="keywords"
@@ -19,11 +19,11 @@
     />
     <meta
       property="og:title"
-      content="NestJS Axios Undici - Fast HTTP Client for NestJS"
+      content="nestjs-axios-undici, the @nestjs/axios API on undici"
     />
     <meta
       property="og:description"
-      content="Undici-based HTTP client for NestJS with interceptors and axios compatibility"
+      content="The @nestjs/axios HttpModule and HttpService on undici. Change one import and your services, axios options, interceptors and error handling keep working."
     />
     <meta property="og:type" content="website" />
     <meta
@@ -34,6 +34,14 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/docsify@4.13.0/lib/themes/vue.css"
     />
+    <style>
+      /* Let long code spans in table cells wrap, so wide tables fit the page
+         instead of scrolling their last column out of view. */
+      .markdown-section td code {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+    </style>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>"
@@ -44,7 +52,7 @@
     <div id="app"></div>
     <script>
       window.$docsify = {
-        name: 'NestJS Axios Undici',
+        name: 'nestjs-axios-undici',
         repo: 'https://github.com/yordan-kanchelov/nestjs-axios-undici',
         loadSidebar: 'docsify/sidebar.md',
         // Every page uses the root sidebar (docsify otherwise looks next to the page).

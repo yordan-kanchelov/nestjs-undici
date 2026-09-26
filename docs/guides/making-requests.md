@@ -1,8 +1,8 @@
-# Making Requests
+# Making requests
 
 The `HttpService` provides an axios-compatible API on top of the [undici](https://github.com/nodejs/undici) client. Every method returns an RxJS `Observable` that emits an axios-like response.
 
-## Basic Usage
+## Basic usage
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -22,7 +22,7 @@ export class CatsService {
 }
 ```
 
-## Convenience Methods
+## Convenience methods
 
 The familiar axios methods are available: `get`, `post`, `put`, `delete`, `patch`, `head`, `options`, `postForm`, `putForm` and `patchForm`.
 
@@ -35,7 +35,7 @@ async create(cat: CreateCatDto) {
 }
 ```
 
-## Request Options
+## Request options
 
 The methods take the same per-request options as axios:
 
@@ -59,11 +59,11 @@ this.httpService.request({
 });
 ```
 
-See [Supported Axios Options](/docs/axios-supported-options.md#request-config) for every option and its differences from axios.
+See [Axios compatibility](/docs/axios-supported-options.md#request-config) for every option and its differences from axios.
 
 ## Undici-style `request`
 
-`request(url, options)` also accepts [undici request options](https://github.com/nodejs/undici#undicirequesturl-options-promise) (`method`, `headers`, `body`, `query`, `dispatcher`, ...):
+`request(url, options)` also accepts [undici request options](https://github.com/nodejs/undici#undicirequesturl-options-promise) such as `method`, `headers`, `body`, `query` and `dispatcher`:
 
 ```typescript
 this.httpService.request('https://api.example.com/search', {
@@ -72,9 +72,9 @@ this.httpService.request('https://api.example.com/search', {
 });
 ```
 
-## Working with Observables
+## Working with observables
 
-The methods return cold Observables: the request is sent when you subscribe (or call `firstValueFrom` / `lastValueFrom`), so RxJS operators such as `retry` send it again:
+The methods return cold Observables. The request is sent when you subscribe, or call `firstValueFrom` or `lastValueFrom`, so RxJS operators such as `retry` send it again:
 
 ```typescript
 import { of } from 'rxjs';
@@ -89,7 +89,7 @@ getCatName(id: string) {
 }
 ```
 
-## Response Handling
+## Response handling
 
 Responses have the axios structure:
 
@@ -98,4 +98,4 @@ Responses have the axios structure:
 - `headers`: Response headers
 - `config`: Request configuration
 
-Like axios, non-2xx responses are emitted as errors (see [Error Handling](/docs/guides/error-handling.md)).
+Like axios, non-2xx responses are emitted as errors. See [Error handling](/docs/guides/error-handling.md).

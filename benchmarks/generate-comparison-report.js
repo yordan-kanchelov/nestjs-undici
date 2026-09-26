@@ -1,23 +1,32 @@
 const fs = require('fs');
 const path = require('path');
 
-// Builds results/PERFORMANCE-COMPARISON-REPORT.md from every
-// results/node<version>-performance-summary.json that exists.
-// `--update-readme` instead refreshes the summary table in README.md.
+// Builds the README headline (--headline <file>) and docs/benchmarks.md
+// (--docs <file>) from every results/node<version>-performance-summary.json
+// that exists. Both come from the same numbers, computed here once, so the
+// headline and the page never drift apart.
 
 const RESULTS_DIR = 'results';
-const REPORT_PATH = path.join(RESULTS_DIR, 'PERFORMANCE-COMPARISON-REPORT.md');
 
+// One shared app (benchmarks/apps/nestjs-app), parameterised by CLIENT
+// (axios|undici), PLATFORM (express|fastify) and INTERCEPTOR - see
+// k6-scripts/lib/benchmark.js SERVICES for the matching k6 config.
 const CONFIGS = [
-  { key: 'express_axios', label: 'Express + Axios' },
-  { key: 'fastify_axios', label: 'Fastify + Axios' },
-  { key: 'fastify_undici', label: 'Fastify + Undici' },
-  { key: 'express_axios_interceptor', label: 'Express + Axios + Interceptor' },
-  { key: 'fastify_axios_interceptor', label: 'Fastify + Axios + Interceptor' },
-  { key: 'fastify_undici_interceptor', label: 'Fastify + Undici + Interceptor' },
+  { key: 'express_axios', label: 'Express + @nestjs/axios' },
+  { key: 'express_undici', label: 'Express + nestjs-axios-undici' },
+  { key: 'fastify_axios', label: 'Fastify + @nestjs/axios' },
+  { key: 'fastify_undici', label: 'Fastify + nestjs-axios-undici' },
+  { key: 'express_axios_interceptor', label: 'Express + @nestjs/axios + interceptor' },
+  { key: 'express_undici_interceptor', label: 'Express + nestjs-axios-undici + interceptor' },
+  { key: 'undici_raw', label: 'Raw undici (floor)' },
 ];
-const PLAIN = CONFIGS.filter((c) => !c.key.endsWith('_interceptor'));
-const INTERCEPTOR_BASES = PLAIN.map((c) => c.key);
+// Platform x interceptor pairs for the ratio table: same framework, only the
+// HTTP client import changes between the two rows in each pair.
+const PAIRS = [
+  { platform: 'Express', axios: 'express_axios', undici: 'express_undici' },
+  { platform: 'Fastify', axios: 'fastify_axios', undici: 'fastify_undici' },
+  { platform: 'Express, with an interceptor', axios: 'express_axios_interceptor', undici: 'express_undici_interceptor' },
+];
 const labelOf = (key) => CONFIGS.find((c) => c.key === key)?.label ?? key;
 
 function readJSONFile(filePath) {
@@ -42,12 +51,11 @@ function loadResults() {
 const num = (value) => (typeof value === 'number' ? value : parseFloat(value));
 const isNum = (value) => typeof value === 'number' && !Number.isNaN(value);
 const formatNumber = (value, decimals = 2) => (isNum(num(value)) ? num(value).toFixed(decimals) : 'N/A');
-const formatPercentage = (value) => (isNum(num(value)) ? `${num(value).toFixed(1)}%` : 'N/A');
 const average = (values) => {
   const nums = values.map(num).filter(isNum);
   return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : NaN;
 };
-const range = (values, decimals = 0, suffix = '') => {
+const range = (values, decimals = 1, suffix = '') => {
   const nums = values.map(num).filter(isNum);
   if (!nums.length) return 'N/A';
   const fmt = (v) => {
@@ -57,46 +65,27 @@ const range = (values, decimals = 0, suffix = '') => {
   const lo = fmt(Math.min(...nums));
   const hi = fmt(Math.max(...nums));
   if (lo === hi) return `${lo}${suffix}`;
-  // "-1 to 15" reads better than "-1-15" when the range crosses zero
-  return `${lo}${Number(lo) < 0 ? ' to ' : '-'}${hi}${suffix}`;
+  return `${lo}-${hi}${suffix}`;
 };
-
-function indicator(improvement) {
-  const value = num(improvement);
-  if (!isNum(value)) return '';
-  if (value >= 50) return '🟢';
-  if (value >= 20) return '🟡';
-  return '🔴';
-}
 
 function metric(entry, key, field) {
   return entry.data.results[key]?.[field];
 }
 
-function rankBy(entry, keys, field) {
-  return keys
-    .map((key) => ({ key, value: metric(entry, key, field) }))
-    .filter((r) => isNum(r.value))
-    .sort((a, b) => a.value - b.value);
+// Throughput ratio of `undiciKey` over `axiosKey` in the same app, e.g. 2.1
+// means nestjs-axios-undici served 2.1x the requests/s of @nestjs/axios.
+function throughputRatio(entry, undiciKey, axiosKey) {
+  const u = metric(entry, undiciKey, 'rps');
+  const a = metric(entry, axiosKey, 'rps');
+  return isNum(u) && isNum(a) && a > 0 ? u / a : NaN;
 }
 
-function comparisonValues(runs, name, field = 'avg_response_improvement') {
-  return runs.map((r) => r.data.comparison?.[name]?.[field]);
-}
-
-// Interceptor overhead: how much slower the average response gets, relative
-// to the same configuration without interceptors (positive = slower).
-function interceptorOverhead(entry, key) {
-  const base = metric(entry, key, 'duration_avg');
-  const withInterceptor = metric(entry, `${key}_interceptor`, 'duration_avg');
-  return isNum(base) && isNum(withInterceptor) && base > 0 ? ((withInterceptor - base) / base) * 100 : NaN;
-}
-
-// "12.3% faster" / "0.1% slower" for a lower-is-better improvement value.
-function fasterOrSlower(value) {
-  const n = num(value);
-  if (!isNum(n)) return 'N/A';
-  return n >= 0 ? `${n.toFixed(1)}% faster` : `${(-n).toFixed(1)}% slower`;
+// How much lower `undiciKey`'s latency is than `axiosKey`'s, in percent
+// (positive = undici is lower/better). Never "% faster".
+function lowerPercent(entry, undiciKey, axiosKey, field) {
+  const u = metric(entry, undiciKey, field);
+  const a = metric(entry, axiosKey, field);
+  return isNum(u) && isNum(a) && a > 0 ? ((a - u) / a) * 100 : NaN;
 }
 
 // Distinct test_info values across runs, e.g. the environment the results came from.
@@ -114,247 +103,40 @@ function packageVersion(name) {
   }
 }
 
-function buildReport(runs) {
-  const versions = runs.map((r) => r.version);
-  const header = (cells) => `| ${cells.join(' | ')} |\n|${cells.map(() => '---').join('|')}|`;
-  const row = (cells) => `| ${cells.join(' | ')} |`;
+// ---------------------------------------------------------------------------
+// The one-line headline, shared by the README and docs/benchmarks.md.
 
-  const bestOverall = CONFIGS.map((c) => ({
-    key: c.key,
-    value: average(runs.map((r) => metric(r, c.key, 'duration_avg'))),
-  }))
-    .filter((c) => isNum(c.value))
-    .sort((a, b) => a.value - b.value);
-  const fastestUndici = runs
-    .map((r) => ({ version: r.version, value: metric(r, 'fastify_undici', 'duration_avg') }))
-    .filter((r) => isNum(r.value))
-    .sort((a, b) => a.value - b.value)[0];
-
-  const clientImpact = comparisonValues(runs, 'fastify_undici_vs_fastify_axios');
-  const combinedImpact = comparisonValues(runs, 'fastify_undici_vs_express_axios');
-  const combinedP95 = comparisonValues(runs, 'fastify_undici_vs_express_axios', 'p95_response_improvement');
-  const combinedThroughput = comparisonValues(runs, 'fastify_undici_vs_express_axios', 'throughput_improvement');
-  const frameworkImpact = comparisonValues(runs, 'fastify_axios_vs_express_axios');
-  const errorRates = runs.flatMap((r) => CONFIGS.map((c) => metric(r, c.key, 'error_rate')));
-  const maxErrorRate = Math.max(...errorRates.filter(isNum), 0);
-
-  const undiciInterceptorVsAxios = runs.map((r) => {
-    const undici = metric(r, 'fastify_undici_interceptor', 'duration_avg');
-    const bestAxios = Math.min(
-      ...['express_axios', 'fastify_axios'].map((k) => metric(r, k, 'duration_avg')).filter(isNum)
-    );
-    return isNum(undici) && isFinite(bestAxios) ? ((bestAxios - undici) / bestAxios) * 100 : NaN;
-  });
-
-  const lines = [];
-  lines.push('# NestJS HTTP Module Performance Comparison Report', '');
-  lines.push('## 🎯 Executive Summary', '');
-  lines.push(`Node.js versions tested: **${versions.map((v) => `Node ${v}`).join(', ')}**`, '');
-  if (bestOverall.length) {
-    lines.push(
-      `**Best Performer:** ${labelOf(bestOverall[0].key)} averages **${formatNumber(bestOverall[0].value)}ms** across all tested Node.js versions, ` +
-        `**${range(combinedImpact)}% faster** than the Express + Axios baseline.`,
-      ''
-    );
-  }
-  lines.push('### 🏆 Key Findings', '');
-  lines.push(`1. **HTTP client matters most** - Undici is ${range(clientImpact)}% faster than Axios on the same framework (Fastify)`);
-  lines.push(`2. **Framework matters less** - Fastify is ${range(frameworkImpact, 1)}% faster than Express with the same client (Axios)`);
-  if (fastestUndici) {
-    lines.push(
-      `3. **Fastest runtime for Undici:** Node.js ${fastestUndici.version} (${formatNumber(fastestUndici.value)}ms average)`
-    );
-  }
-  lines.push(
-    `4. **Interceptors keep Undici ahead** - Fastify + Undici with interceptors is ${range(undiciInterceptorVsAxios)}% faster than the best Axios configuration without interceptors`
-  );
-  lines.push(`5. **Error rate:** ${maxErrorRate === 0 ? '0% across all configurations' : `up to ${(maxErrorRate * 100).toFixed(2)}%`}`, '');
-  lines.push('---', '');
-
-  lines.push('## 📊 Performance at a Glance', '');
-  lines.push('### Best Configuration by Node.js Version');
-  lines.push(header(['Node Version', 'Best Config', 'Avg Response Time', 'Undici vs Baseline']));
-  for (const r of runs) {
-    const best = rankBy(r, CONFIGS.map((c) => c.key), 'duration_avg')[0];
-    const vsBaseline = r.data.comparison?.fastify_undici_vs_express_axios?.avg_response_improvement;
-    lines.push(
-      row([
-        `Node ${r.version}`,
-        best ? labelOf(best.key) : 'N/A',
-        best ? `${formatNumber(best.value)}ms` : 'N/A',
-        `${formatPercentage(vsBaseline)} ${indicator(vsBaseline)}`.trim(),
-      ])
-    );
-  }
-  lines.push('');
-
-  lines.push('### Rankings (average across Node.js versions)');
-  lines.push(header(['Rank', 'Configuration', 'Avg Response', 'P95', 'Throughput (req/s)']));
-  bestOverall.forEach((c, i) => {
-    lines.push(
-      row([
-        String(i + 1),
-        labelOf(c.key),
-        `${formatNumber(c.value)}ms`,
-        `${formatNumber(average(runs.map((r) => metric(r, c.key, 'duration_p95'))))}ms`,
-        formatNumber(average(runs.map((r) => metric(r, c.key, 'rps'))), 0),
-      ])
-    );
-  });
-  lines.push('', '---', '');
-
-  lines.push('## 🔍 Key Performance Metrics', '');
-  lines.push('### Fastify + Undici vs Express + Axios');
-  lines.push(`- **Average Response Time:** ${range(combinedImpact)}% faster`);
-  lines.push(`- **P95 Response Time:** ${range(combinedP95)}% faster`);
-  lines.push(`- **Throughput:** ${range(combinedThroughput)}% higher`, '');
-
-  lines.push('### Improvements by Node.js Version (average response time)');
-  lines.push(header(['Comparison', ...versions.map((v) => `Node ${v}`)]));
-  for (const [name, label] of [
-    ['fastify_axios_vs_express_axios', 'Fastify+Axios vs Express+Axios'],
-    ['fastify_undici_vs_express_axios', 'Fastify+Undici vs Express+Axios'],
-    ['fastify_undici_vs_fastify_axios', 'Fastify+Undici vs Fastify+Axios'],
-  ]) {
-    lines.push(row([label, ...comparisonValues(runs, name).map(formatPercentage)]));
-  }
-  lines.push('', '---', '');
-
-  lines.push('## 🔄 Interceptor Performance Impact', '');
-  lines.push('Overhead = how much slower the average response gets when interceptors are added.', '');
-  lines.push(header(['Configuration', ...versions.map((v) => `Node ${v}`), 'Average']));
-  for (const key of INTERCEPTOR_BASES) {
-    const values = runs.map((r) => interceptorOverhead(r, key));
-    lines.push(row([labelOf(key), ...values.map(formatPercentage), formatPercentage(average(values))]));
-  }
-  lines.push('');
-  lines.push(
-    '> **Note:** the Undici interceptor app uses the `nestjs-axios-undici` fork, which returns axios-compatible responses ' +
-      '(body read and parsed for you), while the plain Undici app uses `nestjs-undici` and parses `body.json()` itself. ' +
-      'The Undici "overhead" therefore includes the fork\'s response adaptation, not only the interceptor.',
-    ''
-  );
-  lines.push('---', '');
-
-  lines.push('## 📋 Detailed Results', '');
-  const matrix = (title, field, decimals, suffix) => {
-    lines.push(`### ${title}`);
-    lines.push(header(['Node Version', ...CONFIGS.map((c) => c.label)]));
-    for (const r of runs) {
-      lines.push(row([`Node ${r.version}`, ...CONFIGS.map((c) => `${formatNumber(metric(r, c.key, field), decimals)}${suffix}`)]));
-    }
-    lines.push('');
-  };
-  matrix('Average Response Time', 'duration_avg', 2, 'ms');
-  matrix('Median Response Time', 'duration_med', 2, 'ms');
-  matrix('P95 Response Time', 'duration_p95', 2, 'ms');
-  matrix('P99 Response Time', 'duration_p99', 2, 'ms');
-  matrix('Throughput (req/s)', 'rps', 0, '');
-  lines.push('---', '');
-
-  lines.push('## 🛠️ Test Configuration', '');
-  lines.push('- **Load Pattern**: 0 → 50 → 100 virtual users over 70 seconds per configuration');
-  lines.push('- **Workload**: each request triggers 5 parallel HTTP calls to a mock service');
-  lines.push(`- **Environment**: ${describeInfo(runs, 'environment')}`);
-  lines.push(`- **Library build**: ${describeInfo(runs, 'library_ref')}`);
-  lines.push('- **Test Tool**: k6');
-  lines.push(
-    `- **Packages**: nestjs-undici ${packageVersion('nestjs-undici')}, nestjs-axios-undici ${packageVersion('nestjs-axios-undici')}, ` +
-      `undici ${packageVersion('undici')}, @nestjs/axios ${packageVersion('@nestjs/axios')}, axios ${packageVersion('axios')}, @nestjs/core ${packageVersion('@nestjs/core')}`
-  );
-  const timestamps = runs.map((r) => r.data.test_info?.timestamp).filter(Boolean).sort();
-  lines.push(`- **Test Runs**: ${timestamps.length ? timestamps.map((t) => t.split('T')[0]).filter((d, i, a) => a.indexOf(d) === i).join(', ') : 'N/A'}`);
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-function readmeBlocks(runs) {
+function buildHeadline(runs) {
   const versions = runs.map((r) => r.version).join(', ');
-  const avg = (key) => range(runs.map((r) => metric(r, key, 'duration_avg')), 0, 'ms');
-  const vsBaseline = (name) => range(comparisonValues(runs, name), 0, '% faster');
-  const throughput = (name) => {
-    const values = comparisonValues(runs, name, 'throughput_improvement').map((v) => 100 + num(v));
-    return range(values, 0, '%');
-  };
-  const clientImpact = range(comparisonValues(runs, 'fastify_undici_vs_fastify_axios'));
-
-  const summary = [
-    `> **TL;DR: Undici is ${clientImpact}% faster than Axios across Node.js ${versions}**`,
-    '',
-    '### Latest Benchmark Results',
-    '',
-    '| Configuration | Avg Response Time | vs Baseline | Throughput |',
-    '|--------------|-------------------|-------------|------------|',
-    `| **Express + Axios** | ${avg('express_axios')} | baseline | 100% |`,
-    `| **Fastify + Axios** | ${avg('fastify_axios')} | ${vsBaseline('fastify_axios_vs_express_axios')} | ${throughput('fastify_axios_vs_express_axios')} |`,
-    `| **Fastify + Undici** | **${avg('fastify_undici')}** | **${vsBaseline('fastify_undici_vs_express_axios')}** | **${throughput('fastify_undici_vs_express_axios')}** |`,
-    '',
-    `*Results from Node.js ${versions}. [View detailed results](#-latest-performance-results) | [View full report](results/PERFORMANCE-COMPARISON-REPORT.md)*`,
-  ];
-  summary.push('', `*Environment: ${describeInfo(runs, 'environment')}*`);
-
-  const details = [
-    `With 5 parallel HTTP requests per endpoint call, tested across Node.js ${versions}:`,
-    '',
-    '| Node Version | Configuration | Avg Response (ms) | P95 (ms) | P99 (ms) | vs Express+Axios |',
-    '|--------------|---------------|-------------------|----------|----------|------------------|',
-  ];
-  for (const r of runs) {
-    for (const c of PLAIN) {
-      const improvement =
-        c.key === 'express_axios'
-          ? 'baseline'
-          : fasterOrSlower(r.data.comparison?.[`${c.key}_vs_express_axios`]?.avg_response_improvement);
-      details.push(
-        `| **Node ${r.version}** | ${c.label} | ${formatNumber(metric(r, c.key, 'duration_avg'))} | ${formatNumber(metric(r, c.key, 'duration_p95'))} | ${formatNumber(metric(r, c.key, 'duration_p99'))} | ${c.key === 'fastify_undici' ? `**${improvement}**` : improvement} |`
-      );
-    }
-  }
-  details.push('', '#### With Interceptors', '');
-  details.push('| Node Version | Express + Axios | Fastify + Axios | Fastify + Undici |');
-  details.push('|--------------|-----------------|-----------------|------------------|');
-  for (const r of runs) {
-    const cell = (key) => {
-      const overhead = interceptorOverhead(r, key);
-      return `${formatNumber(metric(r, `${key}_interceptor`, 'duration_avg'))}ms (${overhead >= 0 ? '+' : ''}${formatPercentage(overhead)})`;
-    };
-    details.push(`| **Node ${r.version}** | ${cell('express_axios')} | ${cell('fastify_axios')} | ${cell('fastify_undici')} |`);
-  }
-  const fastest = runs
-    .map((r) => ({ version: r.version, value: metric(r, 'fastify_undici', 'duration_avg') }))
-    .filter((r) => isNum(r.value))
-    .sort((a, b) => a.value - b.value)[0];
-  details.push('', '### Key Findings', '');
-  details.push(`- **Undici is ${clientImpact}% faster than Axios** on the same framework (Fastify) across all tested Node.js versions`);
-  details.push(`- **Framework impact is smaller**: Fastify is ${range(comparisonValues(runs, 'fastify_axios_vs_express_axios'), 1)}% faster than Express with Axios`);
-  details.push(`- **Best configuration**: Fastify + Undici at ${avg('fastify_undici')} average${fastest ? `, fastest on Node.js ${fastest.version} (${formatNumber(fastest.value)}ms)` : ''}`);
-  details.push(`- **Throughput**: Fastify + Undici delivers ${range(comparisonValues(runs, 'fastify_undici_vs_express_axios', 'throughput_improvement'))}% more requests/s than Express + Axios`);
-  details.push(`- **Interceptors**: Fastify + Undici with interceptors averages ${avg('fastify_undici_interceptor')}, still well ahead of every Axios configuration`);
-
-  return { 'perf-summary': summary.join('\n'), 'perf-details': details.join('\n') };
+  const throughput = runs.flatMap((r) => PAIRS.filter((p) => !p.axios.endsWith('_interceptor')).map((p) => throughputRatio(r, p.undici, p.axios)));
+  const p95 = runs.flatMap((r) => PAIRS.filter((p) => !p.axios.endsWith('_interceptor')).map((p) => lowerPercent(r, p.undici, p.axios, 'duration_p95')));
+  // Results that didn't come from the full Docker + k6 run say so in the
+  // headline itself, until the next full run replaces them.
+  const local = runs.some((r) => /^Local run/i.test(r.data.test_info?.environment ?? ''));
+  return (
+    `In the same NestJS app, with only the import changed, **nestjs-axios-undici served ${range(throughput)}x the requests per second ` +
+    `of @nestjs/axios, with ${range(p95, 0)}% lower p95 latency**, on Express and Fastify with Node.js ${versions}.` +
+    (local ? ' These numbers are preliminary, from a short local run. The full Docker and k6 benchmark replaces them on the next release.' : '')
+  );
 }
 
-function updateReadme(runs) {
-  let readme = fs.readFileSync('README.md', 'utf8');
-  for (const [name, content] of Object.entries(readmeBlocks(runs))) {
-    const start = `<!-- ${name}:start -->`;
-    const end = `<!-- ${name}:end -->`;
-    const from = readme.indexOf(start);
-    const to = readme.indexOf(end);
-    if (from === -1 || to === -1) {
-      console.error(`README.md is missing the ${name} markers; block not updated`);
-      process.exitCode = 1;
-      continue;
-    }
-    readme = readme.slice(0, from + start.length) + '\n' + content + '\n' + readme.slice(to);
+function writeMarkers(filePath, name, content) {
+  const start = `<!-- ${name}:start -->`;
+  const end = `<!-- ${name}:end -->`;
+  const text = fs.readFileSync(filePath, 'utf8');
+  const from = text.indexOf(start);
+  const to = text.indexOf(end);
+  if (from === -1 || to === -1) {
+    console.error(`${filePath} is missing the ${name} markers; not updated`);
+    process.exitCode = 1;
+    return;
   }
-  fs.writeFileSync('README.md', readme);
-  console.log('README.md results updated');
+  fs.writeFileSync(filePath, text.slice(0, from + start.length) + '\n' + content + '\n' + text.slice(to));
+  console.log(`${filePath}: ${name} updated`);
 }
 
 // ---------------------------------------------------------------------------
-// Documentation site page (docs/benchmarks.md)
+// docs/benchmarks.md
 
 const escapeXml = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
@@ -364,20 +146,25 @@ function niceStep(max, target = 5) {
   return [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((step) => step >= raw);
 }
 
-// Horizontal bars of average latency for one Node.js version, colored by HTTP client.
-function latencyChart(run) {
+const clientOf = (key) => (key === 'undici_raw' ? 'raw' : key.includes('undici') ? 'undici' : 'axios');
+
+// Horizontal bars of one metric for one Node.js version, colored by HTTP client
+// (undici blue, axios orange, the raw-undici floor grey). Always the light palette:
+// the docs site is light-only, so a dark-mode override would put white text on a
+// white page (see the "readable benchmark chart in dark mode" fix).
+function barChart(run, { field, valueText, titleText, ariaLabel, valueWidth = 80 }) {
   const bars = CONFIGS.map((c) => ({
+    key: c.key,
     label: c.label,
-    value: metric(run, c.key, 'duration_avg'),
-    p95: metric(run, c.key, 'duration_p95'),
-    client: c.key.includes('undici') ? 'undici' : 'axios',
+    value: metric(run, c.key, field),
+    client: clientOf(c.key),
   })).filter((b) => isNum(b.value));
-  const labelWidth = 230;
+  const labelWidth = 260;
   const plotWidth = 400;
   const rowHeight = 30;
   const barHeight = 16;
   const top = 36;
-  const width = labelWidth + plotWidth + 80;
+  const width = labelWidth + plotWidth + valueWidth;
   const height = top + bars.length * rowHeight + 28;
   const step = niceStep(Math.max(...bars.map((b) => b.value)));
   const axisMax = Math.ceil(Math.max(...bars.map((b) => b.value)) / step) * step;
@@ -395,33 +182,30 @@ function latencyChart(run) {
     const y = top + i * rowHeight + (rowHeight - barHeight) / 2;
     const w = Math.max(x(b.value) - labelWidth, r);
     const x0 = labelWidth;
-    // Square at the baseline, 4px rounded data end.
     const d = `M${x0},${y}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${barHeight - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`;
     return (
-      `<g class="bar"><title>${escapeXml(`${b.label}: ${formatNumber(b.value)} ms average, ${formatNumber(b.p95)} ms p95`)}</title>` +
+      `<g class="bar"><title>${escapeXml(titleText(b))}</title>` +
       `<rect x="0" y="${top + i * rowHeight}" width="${width}" height="${rowHeight}" fill="transparent"/>` +
       `<text class="label" x="${labelWidth - 10}" y="${y + barHeight / 2}" text-anchor="end" dominant-baseline="central">${escapeXml(b.label)}</text>` +
       `<path class="${b.client}" d="${d}"/>` +
-      `<text class="value" x="${x(b.value) + 6}" y="${y + barHeight / 2}" dominant-baseline="central">${formatNumber(b.value, 1)} ms</text></g>`
+      `<text class="value" x="${x(b.value) + 6}" y="${y + barHeight / 2}" dominant-baseline="central">${escapeXml(valueText(b))}</text></g>`
     );
   });
   const legend =
     `<g class="legend"><rect class="undici" x="${labelWidth}" y="6" width="12" height="12" rx="3"/>` +
-    `<text class="label" x="${labelWidth + 18}" y="12" dominant-baseline="central">Undici</text>` +
-    `<rect class="axios" x="${labelWidth + 80}" y="6" width="12" height="12" rx="3"/>` +
-    `<text class="label" x="${labelWidth + 98}" y="12" dominant-baseline="central">Axios</text></g>`;
+    `<text class="label" x="${labelWidth + 18}" y="12" dominant-baseline="central">nestjs-axios-undici</text>` +
+    `<rect class="axios" x="${labelWidth + 150}" y="6" width="12" height="12" rx="3"/>` +
+    `<text class="label" x="${labelWidth + 168}" y="12" dominant-baseline="central">@nestjs/axios</text>` +
+    `<rect class="raw" x="${labelWidth + 260}" y="6" width="12" height="12" rx="3"/>` +
+    `<text class="label" x="${labelWidth + 278}" y="12" dominant-baseline="central">Raw undici</text></g>`;
 
   return [
-    // Scroll inside its own box on narrow screens rather than shrinking the text.
     '<div style="overflow-x:auto">',
-    `<svg class="bench-chart" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;min-width:560px" role="img" aria-label="Average response time in milliseconds on Node.js ${run.version}, lower is better">`,
-    // The docsify site uses a light theme only, so the chart uses the light palette
-    // regardless of the OS colour scheme (a dark-mode override made the text white
-    // on the white page).
+    `<svg class="bench-chart" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:${width}px;min-width:620px" role="img" aria-label="${escapeXml(ariaLabel)}">`,
     '<style>',
-    '.bench-chart{--ink:#0b0b0b;--ink-2:#52514e;--grid:#e4e3df;--undici:#2a78d6;--axios:#eb6834;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+    '.bench-chart{--ink:#0b0b0b;--ink-2:#52514e;--grid:#e4e3df;--undici:#2a78d6;--axios:#eb6834;--raw:#9a9890;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
     '.bench-chart .label{fill:var(--ink)}.bench-chart .value,.bench-chart .tick{fill:var(--ink-2);font-variant-numeric:tabular-nums}',
-    '.bench-chart .grid{stroke:var(--grid);stroke-width:1}.bench-chart .undici{fill:var(--undici)}.bench-chart .axios{fill:var(--axios)}',
+    '.bench-chart .grid{stroke:var(--grid);stroke-width:1}.bench-chart .undici{fill:var(--undici)}.bench-chart .axios{fill:var(--axios)}.bench-chart .raw{fill:var(--raw)}',
     '.bench-chart .bar:hover path{opacity:.85}',
     '</style>',
     legend,
@@ -432,83 +216,134 @@ function latencyChart(run) {
   ].join('');
 }
 
-function buildDocsPage(runs) {
-  const latest = runs[runs.length - 1];
-  const versions = runs.map((r) => r.version).join(', ');
-  const clientImpact = range(comparisonValues(runs, 'fastify_undici_vs_fastify_axios'));
-  const combined = range(comparisonValues(runs, 'fastify_undici_vs_express_axios'));
-  const throughput = range(comparisonValues(runs, 'fastify_undici_vs_express_axios', 'throughput_improvement'));
+function latencyChart(run) {
+  return barChart(run, {
+    field: 'duration_avg',
+    valueText: (b) => `${formatNumber(b.value, 1)} ms`,
+    titleText: (b) => `${b.label}: ${formatNumber(b.value)} ms average, ${formatNumber(metric(run, b.key, 'duration_p95'))} ms p95`,
+    ariaLabel: `Average response time in milliseconds on Node.js ${run.version}, lower is better`,
+  });
+}
+
+// Requests/s per configuration. Each nestjs-axios-undici bar also shows its
+// multiple of the @nestjs/axios bar on the same platform (the PAIRS table), so
+// the "Nx the requests" figure reads straight off the chart.
+function throughputChart(run) {
+  const rps = (v) => Math.round(v).toLocaleString('en-US');
+  const ratioOf = (key) => {
+    const pair = PAIRS.find((p) => p.undici === key);
+    const ratio = pair ? throughputRatio(run, pair.undici, pair.axios) : NaN;
+    return isNum(ratio) ? ratio : undefined;
+  };
+  return barChart(run, {
+    field: 'rps',
+    valueWidth: 150,
+    valueText: (b) => {
+      const ratio = ratioOf(b.key);
+      return ratio === undefined ? `${rps(b.value)} req/s` : `${rps(b.value)} req/s (${ratio.toFixed(1)}x)`;
+    },
+    titleText: (b) => {
+      const pair = PAIRS.find((p) => p.undici === b.key);
+      const ratio = ratioOf(b.key);
+      return ratio === undefined
+        ? `${b.label}: ${rps(b.value)} requests/s`
+        : `${b.label}: ${rps(b.value)} requests/s, ${ratio.toFixed(2)}x ${labelOf(pair.axios)}`;
+    },
+    ariaLabel: `Throughput in requests per second on Node.js ${run.version}, higher is better`,
+  });
+}
+
+function ratioTable(runs) {
   const header = (cells) => `| ${cells.join(' | ')} |\n|${cells.map((_, i) => (i ? '---:' : '---')).join('|')}|`;
   const row = (cells) => `| ${cells.join(' | ')} |`;
-  const matrix = (field, decimals, suffix) => [
+  return [
+    header(['Platform', 'Throughput', 'Avg latency', 'P95 latency']),
+    ...PAIRS.map((p) =>
+      row([
+        p.platform,
+        `${range(runs.map((r) => throughputRatio(r, p.undici, p.axios)))}x`,
+        `${range(runs.map((r) => lowerPercent(r, p.undici, p.axios, 'duration_avg')), 0)}% lower`,
+        `${range(runs.map((r) => lowerPercent(r, p.undici, p.axios, 'duration_p95')), 0)}% lower`,
+      ])
+    ),
+  ].join('\n');
+}
+
+function resultsMatrix(runs, field, decimals, suffix) {
+  const header = (cells) => `| ${cells.join(' | ')} |\n|${cells.map((_, i) => (i ? '---:' : '---')).join('|')}|`;
+  const row = (cells) => `| ${cells.join(' | ')} |`;
+  return [
     header(['Configuration', ...runs.map((r) => `Node ${r.version}`)]),
     ...CONFIGS.map((c) => row([c.label, ...runs.map((r) => `${formatNumber(metric(r, c.key, field), decimals)}${suffix}`)])),
   ].join('\n');
+}
+
+function buildDocsPage(runs) {
+  const latest = runs[runs.length - 1];
+  const versions = runs.map((r) => r.version).join(', ');
+  const repo = 'https://github.com/yordan-kanchelov/nestjs-axios-undici';
 
   return [
     '# Benchmarks',
     '',
-    '> This page is generated from the latest results in [`benchmarks/results`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/results) by `benchmarks/generate-comparison-report.js --docs`.',
+    `> Generated from [\`benchmarks/results\`](${repo}/tree/main/benchmarks/results) by \`benchmarks/generate-comparison-report.js --docs\`.`,
     '',
-    `Each NestJS app below receives a request and makes **5 parallel HTTP calls** to a mock upstream service, under a k6 load ramping to 100 concurrent users. Tested on Node.js ${versions}.`,
+    buildHeadline(runs),
     '',
-    '## Summary',
+    '## Throughput and latency ratios',
     '',
-    `- **Undici is ${clientImpact}% faster than Axios** with the same framework (Fastify + Undici vs Fastify + Axios).`,
-    `- **Fastify + Undici is ${combined}% faster than the default Express + Axios setup**, with ${throughput}% more throughput.`,
-    `- **With interceptors**, Fastify + Undici averages ${range(runs.map((r) => metric(r, 'fastify_undici_interceptor', 'duration_avg')), 0, 'ms')}, still faster than every Axios configuration (${range(runs.map((r) => Math.min(...['express_axios', 'fastify_axios'].map((k) => metric(r, k, 'duration_avg')))), 0, 'ms')} at best).`,
+    'Each row compares nestjs-axios-undici with `@nestjs/axios` in the same app on the same platform. Only the import changes. A throughput ratio above 1x means more requests per second.',
     '',
-    `## Average Response Time on Node.js ${latest.version}`,
+    ratioTable(runs),
+    '',
+    `## Throughput on Node.js ${latest.version}`,
+    '',
+    'Requests per second; higher is better. Each nestjs-axios-undici bar shows its multiple of `@nestjs/axios` on the same platform.',
+    '',
+    throughputChart(latest),
+    '',
+    `## Average response time on Node.js ${latest.version}`,
     '',
     'Lower is better. Hover a bar for its p95.',
     '',
     latencyChart(latest),
     '',
-    '## Average Response Time (ms)',
+    "## What's measured",
     '',
-    matrix('duration_avg', 2, ''),
+    `- Each request to the app makes 5 parallel GET calls to a mock backend and returns the parsed bodies. For a given platform, only the \`HttpModule\`/\`HttpService\` import changes between the two rows. The app is [\`benchmarks/apps/nestjs-app\`](${repo}/tree/main/benchmarks/apps/nestjs-app).`,
+    '- The "with an interceptor" rows add the same `axiosRef` request and response interceptor to both clients. It sets a header and times the call, and logs nothing per request.',
+    `- [\`benchmarks/apps/undici-raw\`](${repo}/tree/main/benchmarks/apps/undici-raw) calls undici directly, with no \`HttpModule\`/\`HttpService\` at all, as a floor for the other rows.`,
     '',
-    '## P95 Response Time (ms)',
+    '## Full results',
     '',
-    matrix('duration_p95', 2, ''),
+    `Tested on Node.js ${versions}. The Environment section below says where these numbers come from.`,
     '',
-    '## Throughput (requests/s)',
+    '### Average response time (ms)',
     '',
-    matrix('rps', 0, ''),
+    resultsMatrix(runs, 'duration_avg', 2, ''),
     '',
-    '## Interceptor Overhead',
+    '### P95 response time (ms)',
     '',
-    'How much slower the average response gets when interceptors are added.',
+    resultsMatrix(runs, 'duration_p95', 2, ''),
     '',
-    header(['Configuration', ...runs.map((r) => `Node ${r.version}`)]),
-    ...INTERCEPTOR_BASES.map((key) => row([labelOf(key), ...runs.map((r) => formatPercentage(interceptorOverhead(r, key)))])),
+    '### Throughput (requests/s)',
     '',
-    '> The Undici interceptor app uses `nestjs-axios-undici`, which returns axios-compatible responses (body read and parsed), while the plain Undici app uses upstream `nestjs-undici` and returns the raw body stream. Its overhead therefore includes the axios-compatible response adaptation, not only the interceptors.',
-    '',
-    '## Configurations',
-    '',
-    '| Configuration | Server | HTTP client |',
-    '|---|---|---|',
-    '| Express + Axios | Express | `@nestjs/axios` |',
-    '| Fastify + Axios | Fastify | `@nestjs/axios` |',
-    '| Fastify + Undici | Fastify | `nestjs-undici` (upstream) |',
-    '| Express/Fastify + Axios + Interceptor | Express/Fastify | `@nestjs/axios` with request/response interceptors |',
-    '| Fastify + Undici + Interceptor | Fastify | `nestjs-axios-undici` (this repository) with a logging interceptor |',
+    resultsMatrix(runs, 'rps', 0, ''),
     '',
     '## Environment',
     '',
     `- **Where**: ${describeInfo(runs, 'environment')}`,
     `- **Library build**: \`${describeInfo(runs, 'library_ref')}\``,
-    `- **Load**: 0 → 50 → 100 virtual users over 70 seconds per configuration, configurations run one after another`,
-    `- **Runs**: ${[...new Set(runs.map((r) => r.data.test_info?.timestamp?.split('T')[0]).filter(Boolean))].join(', ')}`,
+    `- **Packages**: nestjs-axios-undici ${packageVersion('nestjs-axios-undici')}, @nestjs/axios ${packageVersion('@nestjs/axios')}, axios ${packageVersion('axios')}, undici ${packageVersion('undici')}, @nestjs/core ${packageVersion('@nestjs/core')}`,
+    `- **Runs**: ${[...new Set(runs.map((r) => r.data.test_info?.timestamp?.split('T')[0]).filter(Boolean))].join(', ') || 'N/A'}`,
     '',
     'Absolute latencies depend on the machine; compare configurations within a run.',
     '',
-    '## Regression Checks',
+    '## Regression check',
     '',
-    'Every pull request that touches `src/` runs an `HttpService` micro-benchmark against the base branch on the same runner and fails if throughput drops by more than 10%. See [`benchmarks/micro`](https://github.com/yordan-kanchelov/nestjs-axios-undici/tree/main/benchmarks/micro).',
+    `Every pull request that touches \`src/\` runs an \`HttpService\` micro-benchmark against the base branch on the same runner and fails if client CPU per request rises by more than 10%. See [\`benchmarks/micro\`](${repo}/tree/main/benchmarks/micro). A lighter, no-Docker end-to-end check also runs on pull requests and publishes the throughput ratio; see [\`benchmarks/e2e\`](${repo}/tree/main/benchmarks/e2e).`,
     '',
-    '## Running the Benchmarks',
+    '## Reproduce',
     '',
     '```bash',
     'cd benchmarks',
@@ -516,10 +351,16 @@ function buildDocsPage(runs) {
     'npm ci && npm run install-lib  # install benchmark deps + the packed library',
     './test-all-node-versions.sh    # Docker + k6 across Node.js 22, 24 and 26',
     'node generate-comparison-report.js --docs ../docs/benchmarks.md',
+    'node generate-comparison-report.js --headline ../README.md   # root README',
+    'node generate-comparison-report.js --headline README.md      # benchmarks/README.md',
     '```',
+    '',
+    `Or, without Docker or k6: \`npm run bench:ab\` (see [\`benchmarks/README.md\`](${repo}/tree/main/benchmarks/README.md)).`,
     '',
   ].join('\n');
 }
+
+// ---------------------------------------------------------------------------
 
 const runs = loadResults();
 if (runs.length === 0) {
@@ -528,13 +369,16 @@ if (runs.length === 0) {
 }
 
 const docsIndex = process.argv.indexOf('--docs');
+const headlineIndex = process.argv.indexOf('--headline');
+
 if (docsIndex !== -1) {
   const target = process.argv[docsIndex + 1] || '../docs/benchmarks.md';
   fs.writeFileSync(target, buildDocsPage(runs));
   console.log(`Docs page written to ${target}`);
-} else if (process.argv.includes('--update-readme')) {
-  updateReadme(runs);
+} else if (headlineIndex !== -1) {
+  const target = process.argv[headlineIndex + 1] || 'README.md';
+  writeMarkers(target, 'bench-headline', buildHeadline(runs));
 } else {
-  fs.writeFileSync(REPORT_PATH, buildReport(runs));
-  console.log(`Report written to ${REPORT_PATH} (Node.js ${runs.map((r) => r.version).join(', ')})`);
+  console.error('Usage: generate-comparison-report.js --docs [file] | --headline [file]');
+  process.exit(1);
 }

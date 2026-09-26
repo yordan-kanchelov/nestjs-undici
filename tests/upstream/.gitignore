@@ -1,0 +1,3 @@
+# Scratch working dirs the run scripts create and normally clean up
+# themselves; ignored here as a backstop if a run is interrupted.
+**/.run-*/

@@ -29,9 +29,9 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-axios-undici', () => {
   const createMockServer = (handler: http.RequestListener): Promise<string> => {
     return new Promise(resolve => {
       mockServer = http.createServer(handler);
-      mockServer.listen(0, 'localhost', () => {
+      mockServer.listen(0, '127.0.0.1', () => {
         const port = (mockServer.address() as AddressInfo).port;
-        resolve(`http://localhost:${port}`);
+        resolve(`http://127.0.0.1:${port}`);
       });
     });
   };
@@ -775,14 +775,15 @@ describe('Interceptor Comparison: @nestjs/axios vs nestjs-axios-undici', () => {
     });
 
     it('should maintain interceptor count', () => {
-      // Starts with 1 (axios adapter interceptor)
+      // No module-registered interceptors yet - `interceptorCount` is the
+      // real count (plan.md phase 3 "HttpService members").
+      expect(undiciService.interceptorCount).toBe(0);
+
+      undiciService.addInterceptor((request, next) => next.handle(request));
       expect(undiciService.interceptorCount).toBe(1);
 
       undiciService.addInterceptor((request, next) => next.handle(request));
       expect(undiciService.interceptorCount).toBe(2);
-
-      undiciService.addInterceptor((request, next) => next.handle(request));
-      expect(undiciService.interceptorCount).toBe(3);
     });
   });
 

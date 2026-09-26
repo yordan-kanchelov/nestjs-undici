@@ -5,7 +5,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "pack-lib": "./scripts/pack-lib.sh",
-    "install-lib": "node scripts/install-lib.js"
+    "install-lib": "node scripts/install-lib.js",
+    "bench:ab": "node e2e/run.js"
   },
   "private": true,
   "devDependencies": {
@@ -23,7 +24,6 @@
     "axios": "^1.20.0",
     "fastify": "^5.12.5",
     "http-cookie-agent": "^8.0.0",
-    "nestjs-undici": "^0.2.60",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "tough-cookie": "^5.1.2",

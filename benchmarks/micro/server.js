@@ -1,4 +1,4 @@
-// Upstream stub for the micro-benchmark: a keep-alive JSON endpoint.
+// Upstream stub for the micro-benchmark: GET /json, POST /echo, GET /404.
 // Runs in its own process so it doesn't compete with the client's event loop.
 const http = require('node:http');
 
@@ -9,8 +9,13 @@ const body = JSON.stringify({
 });
 
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
-  res.end(body);
+  // Drain the request body (POST /echo sends one) before responding, like a real upstream would.
+  req.on('data', () => {});
+  req.on('end', () => {
+    const status = req.url.startsWith('/404') ? 404 : 200;
+    res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+    res.end(body);
+  });
 });
 server.keepAliveTimeout = 60_000;
 server.listen(0, '127.0.0.1', () => {

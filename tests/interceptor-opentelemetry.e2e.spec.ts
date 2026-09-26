@@ -199,8 +199,11 @@ describe('OpenTelemetry Interceptor Integration', () => {
   });
 
   describe('interceptor count', () => {
-    it('should have two interceptors after initialization (OpenTelemetry + axios adapter)', () => {
-      expect(httpService.interceptorCount).toBe(2); // OpenTelemetry + axios adapter
+    it('should have one interceptor after initialization (OpenTelemetry)', () => {
+      // `interceptorCount` is the real module-registered count now (plan.md
+      // phase 3 "HttpService members") - just the OpenTelemetry interceptor
+      // registered from `onModuleInit`, no phantom "axios adapter" entry.
+      expect(httpService.interceptorCount).toBe(1);
     });
   });
 });
